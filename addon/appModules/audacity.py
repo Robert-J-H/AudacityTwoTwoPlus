@@ -24,7 +24,7 @@ import textInfos
 import time
 import tones
 from logHandler import log
-import nvwave
+from  nvwave import playWaveFile
 # import review
 # import screenBitmap
 # import ctypes
@@ -33,13 +33,11 @@ import nvwave
 
 SCRCAT_AUDACITY = _('Audacity')
 MOUSEEVENTF_WHEEL=0x0800
-# better way for obtaining the path?
-dataPath=[x for x in paths if 'audacity' in x][0]+'\\data\\'
+dataPath=os.path.join(os.path.dirname(__file__), "data\\")
 menuFull=[]
 assignedShortcuts={}
 toolBars={}
 lastStatus=u'Stopped.'
-currentInstance=0
 
 def firstNum(string):
     for i, c in enumerate(string):
@@ -128,9 +126,6 @@ class AppModule(appModuleHandler.AppModule):
             except:
                 KIGesture.fromName('downArrow').send()
 
-    def playSnippet(self ,fileName):
-        nvwave.playWaveFile(dataPath+fileName)
-
     def event_NVDAObject_init(self,obj):
         #if obj:
         #    eventHandler.requestEvents("nameChange", obj.processID, obj.windowHandle)
@@ -168,31 +163,36 @@ class AppModule(appModuleHandler.AppModule):
             menus=obj.previous.children
             if len(menus) >=10:
                 signet=dataPath+'signet.wav'
-                nvwave.playWaveFile(signet)
+                playWaveFile(signet)
                 for i in range(len(menus)):
                     queueHandler.queueFunction(queueHandler.eventQueue,self.getMenuTree,menus[i])
 
 
-    def _get_Toolbars(self,obj):
-        global toolBars, currentInstance
+    def _update_Toolbars(self,obj):
+        global toolBars
         winHandle=obj.windowHandle
-        if (len(toolBars)==13 and winHandle==currentInstance) or  obj.windowClassName!='wxWindowNR':
-            return True
+        if toolBars.has_key(winHandle):
+            return
         else:
-            currentInstance=winHandle
-            try:
-                toolBars={tb.name.lstrip(u'Audacity ') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_GROUPING}
-                log.info(str(len(toolBars)))
-                if len(toolBars)>=13: 
-                    return True
-            except:
-                pass
+            activeToolBars={tb.name.lstrip(u'Audacity ') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_GROUPING}
+            if len(activeToolBars)>=13: 
+                toolBars[winHandle]=activeToolBars
+                return True
+
+    def getToolBar(self,key):
+        obj=api.getForegroundObject()
+        wh=obj.windowHandle
+        if toolBars.has_key(wh):
+            return toolBars[wh].get(key)
+        else:
+            self._update_Toolbars(obj)
+            return toolBars[wh].get(key)
+
 
     def event_foreground(self, obj, nextHandler):
         speech.cancelSpeech()
-        #queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, str(obj.windowClassName))
         self._get_Menus(obj)
-        self._get_Toolbars(obj)
+        self._update_Toolbars(obj)
         queueHandler.queueFunction(queueHandler.eventQueue,self._mapAudacityKeys)
         nextHandler()
 
@@ -235,8 +235,8 @@ class AppModule(appModuleHandler.AppModule):
         nextHandler()
 
     def script_states(self,gesture):
-        ui.browseableMessage(''.join((x+'\n' for x in toolBars.iterkeys())),'')
-        #for elem  in toolBars.viewkeys():ui.message(str(elem))
+        ui.message(os.path.join(os.path.dirname(__file__), "data"))
+        #ui.browseableMessage(''.join((x+'\n' for x in toolBars.iterkeys())),'')
     script_states.__doc__=_('Reports all tool bars that are currently docked.')
     script_states.category=SCRCAT_AUDACITY
 
@@ -245,7 +245,7 @@ class AppModule(appModuleHandler.AppModule):
         menuFull+=[x for x in obj.recursiveDescendants if x and x.role == 11]
 
     def script_guide(self, gesture):
-        with open(str(dataPath+'Audacity 2.1.3 Guide.htm'),'r') as guide:
+        with open(str(dataPath+'Audacity 2.2.0 Guide.htm'),'r') as guide:
             guide=guide.read()
             speech.cancelSpeech
             ui.browseableMessage(guide,'Guide',True)
@@ -297,16 +297,15 @@ class AppModule(appModuleHandler.AppModule):
         api.copyToClip(temp)
 
     def script_announcePlaybackPeak(self,gesture):
-        pPeak=toolBars['Playback Meter Toolbar'].firstChild.next.name.partition('Peak')[2] 
-        pPeak=toolBars['Playback Meter Toolbar'].firstChild.next.name.partition('Peak')[2] 
+        pPeak=self.getToolBar('Playback Meter Toolbar').getChild(1).name.partition('Peak')[2] 
         ui.message(pPeak)
     script_announcePlaybackPeak.__doc__=_('Reports the current playback level.')
     script_announcePlaybackPeak.category=SCRCAT_AUDACITY
 
     def script_announceRecordingPeak(self,gesture):
         repeatCount=scriptHandler.getLastScriptRepeatCount()
-        if repeatCount==0:
-            rPeak=toolBars['Recording Meter Toolbar'].firstChild.next.name.partition('Peak')[2] 
+        #if repeatCount==0:
+        rPeak=self.getToolBar('Recording Meter Toolbar').getChild(1).name.partition('Peak')[2] 
         ui.message(rPeak)
     script_announceRecordingPeak.__doc__=_('Reports the current recording  level.')
     script_announceRecordingPeak.category=SCRCAT_AUDACITY
@@ -387,7 +386,7 @@ class AppModule(appModuleHandler.AppModule):
     script_toggleAudacityInputHelp.category=SCRCAT_AUDACITY
 
     def getTime(self,child):
-        rslt=toolBars.get('Selection Toolbar').getChild(child).name.replace(',','')
+        rslt=self.getToolBar('Selection Toolbar').getChild(child).name.replace(',','')
         rslt=rslt.replace('+', ' ')
         for index, c in enumerate(rslt):
             if c.isdigit(): 
@@ -466,6 +465,7 @@ class SelectionControls (NVDAObjects.IAccessible.IAccessible):
 class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     #  prevent the roles table and row (= trackpanel and audio track) from being spoken 
     controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLEROW)
+    controlTypes.silentValuesForRoles.add(controlTypes.ROLE_TABLEROW)
     controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLE)
     shouldAllowIAccessibleFocusEvent=True
     appName='Audacity'
@@ -473,18 +473,21 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     def __init__(self, *args, **kwargs):
         super(Track, self).__init__(*args, **kwargs)
         self.appName=self.appModule.appName
+
     def initOverlayClass(self):
         pass
 
     def event_gainFocus(self):
         #if self.parent.childCount !=1:
         super(Track,self).event_gainFocus()
+        if not toolBars.has_key(self.windowHandle):
+            super(Track,self)._update_Toolbars(api.getForegroundObject())
         if len(self.navGestures)==0:
             self._mapAudacityKeys
         self.bindGestures(self.navGestures)
         #inputCore.manager._captureFunc = self._inputCaptor
-        self.SelectionToolBar=toolBars.get('Selection Toolbar').getChild
-        self.transportToolBar=toolBars.get('Transport Toolbar').getChild
+        #self.SelectionToolBar=toolBars.get('Selection Toolbar').getChild
+        #self.transportToolBar=toolBars.get('Transport Toolbar').getChild
         self.mainMenu=self.parent.parent.parent.previous.getChild
 
     def transportAction(self,button,action=None):
@@ -538,25 +541,22 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     script_announceAudioPosition.category=SCRCAT_AUDACITY
 
     def script_announceStart(self, gesture):
-        start = self.getTime(14)
         repeatCount=scriptHandler.getLastScriptRepeatCount()
         if repeatCount==0:
-            ui.message(start+u' Start')
-        elif repeatCount==1:
-            speech.speakSpelling(start)
+            start = self.getTime(14)+' Start'
+        else:
+            start = self.getTime(16)+' Center'
+        ui.message(start)
     script_announceStart.__doc__=_('Reports the cursor position or left selection boundary.')
     script_announceStart.category=SCRCAT_AUDACITY
 
     def script_announceEnd(self, gesture):
-        if u'Length' in self.SelectionToolBar(13).value:
-            end = self.getTime(15)+' long'
-        else:
-            end = self.getTime(17)+' end'
         repeatCount=scriptHandler.getLastScriptRepeatCount()
         if repeatCount==0:
-            ui.message(end)
-        elif repeatCount==1:
-            speech.speakSpelling(end)
+            end = self.getTime(17)+' end'
+        else:
+            end = self.getTime(15)+' long'
+        ui.message(end)
     script_announceEnd.__doc__=_('Reports the right selection boundary if end is chosen in the selection toolbar. Otherwise, the selection length is reported, followed by the word long.')
     script_announceEnd.category=SCRCAT_AUDACITY
     
@@ -630,9 +630,9 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
             return
         elif lastStatus=='Playing.':
             if which==2:
-                queueHandler.queueFunction(queueHandler.eventQueue,self.playSnippet, 'selection_start.wav')
+                queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_start.wav')
             elif which==3:
-                queueHandler.queueFunction(queueHandler.eventQueue,self.playSnippet, 'selection_end.wav')
+                queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_end.wav')
         elif lastStatus in [u'Stopped.', u'Playing Paused.', u'blank', None]:
             if which in [0,2]:
                 ui.message(self.getTime(11))
@@ -650,8 +650,6 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     def script_SelectionEnd(self, gesture):
         self.autoTime(gesture)
     def script_PlayStopandSetCursor(self, gesture):
-        self.autoTime(gesture)
-    def script_Pause(self, gesture):
         self.autoTime(gesture)
     def script_SelectionStart(self, gesture):
         self.autoTime(gesture)
@@ -729,7 +727,7 @@ class labelTrack(Track):
     def initOverlayClass(self):
         self.isFocusable=True
         #if '><' in self.name:
-        #    self.editMode=2
+        #    self.editMode=2g
 
     def event_gainFocus(self):
         super(labelTrack,self).event_gainFocus()

@@ -7,7 +7,6 @@ canditatesStartTime = [
     u'Selection Start',
     u'Selection End',
     u'Play/Stop and Set Cursor',
-    u'Pause',
     u'Selection Start',
     u'Selection End',
     u'Track Start',
@@ -57,6 +56,7 @@ shouldNotAutoSpeak = (
     u'Long seek right during playback'
     #u'Left at Playback Position', 
     #u'Right at Playback Position', 
+    u'Pause', 
     u'Pause', 
     u'Play/Stop', 
     u'Loop Play', 
