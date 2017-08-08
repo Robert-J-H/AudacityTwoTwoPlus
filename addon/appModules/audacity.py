@@ -84,10 +84,19 @@ class AppModule(appModuleHandler.AppModule):
     def _inputCaptor(self, gesture):
         if api.getFocusObject().windowControlID != 1003 or lastStatus==u'Recording.' or gesture.isNVDAModifierKey or gesture.isModifier:
             return True
+        script = gesture.script
         lookup=assignedShortcuts.get(gesture.displayName, None) 
-        if lookup and not  lookup[0] in shouldNotAutoSpeak:
+        if self._audacityInputHelp:
+            scriptName = scriptHandler.getScriptName(script) if script else u''
+            if lookup:
+                queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[2]+'->'+lookup[0])
+            if scriptName and not lookup:
+                queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, scriptName)
+            if scriptName == 'toggleAudacityInputHelp':
+                return True
+        elif lookup and not  lookup[0] in shouldNotAutoSpeak:
             queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[0])
-        return True
+        return not self._audacityInputHelp
         # never comes here
         textList = [gesture.displayName]
         scriptName=u''
@@ -280,7 +289,7 @@ class AppModule(appModuleHandler.AppModule):
                         ncmd=KIGesture.fromName(ncmd)
                         if cmd[0] in canditatesStartTime or cmd[0] in canditatesEndTime or cmd[0] in canditatesLength:
                             self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd[0], [u' ',u'(',u')',u'/'], [u'', u'', u'', u''])
-                        assignedShortcuts[ncmd.displayName]=(cmd[0],obj)
+                        assignedShortcuts[ncmd.displayName]=(cmd[0], obj, obj.parent.name)
                     except KeyError:
                         pass
 
@@ -391,8 +400,8 @@ class AppModule(appModuleHandler.AppModule):
     script_wheelBack.category=SCRCAT_AUDACITY
 
     def script_toggleAudacityInputHelp(self,gesture):
-        ui.message(str(api.getNavigatorObject().windowHandle))
-        return
+        if not lastStatus in ['Playing Paused.', 'Recording Paused.', 'Stopped.']:
+            return
         self._audacityInputHelp=not self._audacityInputHelp
         stateOn = 'Audacity input help on'
         stateOff = 'Audacity input help off'
@@ -697,6 +706,8 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
         self.autoTime(gesture)
     def script_SetorExtendLeftSelection(self, gesture):
         self.autoTime(gesture,2)
+    def script_LeftatPlaybackPosition(self, gesture):
+        self.autoTime(gesture,2)
     def script_SelectionContractLeft(self, gesture):
         self.autoTime(gesture)
     def script_CursorLeft(self, gesture):
@@ -716,6 +727,8 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     def script_SelectionExtendRight(self, gesture):
         self.autoTime(gesture,1)
     def script_SetorExtendRightSelection(self, gesture):
+        self.autoTime(gesture,3)
+    def script_RightatPlaybackPosition(self, gesture):
         self.autoTime(gesture,3)
     def script_SelectionContractRight(self, gesture):
         self.autoTime(gesture,1)
