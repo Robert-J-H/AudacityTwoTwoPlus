@@ -1,6 +1,7 @@
 # Audacity App Module for NVDA
 # -*- coding: utf-8 -*-
-# Copyright 2017 Robert Hänggi and NVDA Access
+# Copyright (c) 2017 Robert Hänggi and NVDA Access
+
 import appModuleHandler
 from appModules import __path__ as paths
 from  appVars import *
@@ -117,7 +118,7 @@ class AppModule(appModuleHandler.AppModule):
         #if (windowControlID in [2723]):
             #clsList.insert(0, SelectionControls)
         # Somewhat outdated
-        if (windowText=='Track Panel' and windowControlID==1003 and childID>>0):
+        if (windowText=='Track Panel' and windowControlID==1003 and childID>=0):
             clsList.insert(0, Track)
             try:
                 if 'Label' in name:
@@ -127,11 +128,9 @@ class AppModule(appModuleHandler.AppModule):
                 KIGesture.fromName('downArrow').send()
 
     def event_NVDAObject_init(self,obj):
-        #if obj:
-        #    eventHandler.requestEvents("nameChange", obj.processID, obj.windowHandle)
-        if obj.windowClassName==u'#32770':
-            obj.role=controlTypes.ROLE_DIALOG
-            obj.isFocusable=True
+        if obj.windowClassName==u'#32770' and obj.role==controlTypes.ROLE_PANE:
+            #obj.role=controlTypes.ROLE_DIALOG
+            obj.isFocusable=False
         if obj.windowClassName=='Button' and not obj.role in [controlTypes.ROLE_MENUBAR, controlTypes.ROLE_MENUITEM, controlTypes.ROLE_POPUPMENU]:
             obj.name = winUser.getWindowText(obj.windowHandle).replace('&','')
         if obj.role==controlTypes.ROLE_PANE and obj.name and (obj.name.startswith('Audacity ') or obj.name=='Timeline'):
@@ -168,9 +167,20 @@ class AppModule(appModuleHandler.AppModule):
                     queueHandler.queueFunction(queueHandler.eventQueue,self.getMenuTree,menus[i])
 
 
-    def _update_Toolbars(self,obj):
+    def _update_Toolbars(self,callback=0):
         global toolBars
+        obj=api.getForegroundObject()
+        if not obj or obj.name == None:
+            try:
+                obj=api.getFocusAncestors()[2]
+            except:
+                obj=api.getFocusObject().parent.parent.parent
+            finally:
+                return
+        if not obj:
+            return
         winHandle=obj.windowHandle
+        winClass=obj.windowClassName
         if toolBars.has_key(winHandle):
             return
         else:
@@ -178,21 +188,26 @@ class AppModule(appModuleHandler.AppModule):
             if len(activeToolBars)>=13: 
                 toolBars[winHandle]=activeToolBars
                 return True
+            elif callback!=1:
+                self._update_Toolbars(1)
+            else:
+                return
 
     def getToolBar(self,key):
         obj=api.getForegroundObject()
+        if obj.name==None:
+            obj=api.getFocusAncestors()[2]
         wh=obj.windowHandle
         if toolBars.has_key(wh):
             return toolBars[wh].get(key)
-        else:
-            self._update_Toolbars(obj)
+        elif obj.windowClasName==u'wxWindowNR':
+            self._update_Toolbars()
             return toolBars[wh].get(key)
 
 
     def event_foreground(self, obj, nextHandler):
         speech.cancelSpeech()
         self._get_Menus(obj)
-        self._update_Toolbars(obj)
         queueHandler.queueFunction(queueHandler.eventQueue,self._mapAudacityKeys)
         nextHandler()
 
@@ -227,7 +242,6 @@ class AppModule(appModuleHandler.AppModule):
     def event_nameChange(self, obj, nextHandler):
         global lastStatus
         name=obj.name
-        log.info(repr(name))
         if name in ['Stopped.','Playing Paused.', 'Recording Paused.'] and name !=lastStatus:
             ui.message(str(name))
         if name in ['Recording.','Playing.','Stopped.','Playing Paused.', 'Recording Paused.']:
@@ -264,7 +278,7 @@ class AppModule(appModuleHandler.AppModule):
                     ncmd=ncmd.lower()
                     try:
                         ncmd=KIGesture.fromName(ncmd)
-                        if cmd[0] in canditatesStartTime or cmd[0] in canditatesEndTime:
+                        if cmd[0] in canditatesStartTime or cmd[0] in canditatesEndTime or cmd[0] in canditatesLength:
                             self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd[0], [u' ',u'(',u')',u'/'], [u'', u'', u'', u''])
                         assignedShortcuts[ncmd.displayName]=(cmd[0],obj)
                     except KeyError:
@@ -377,6 +391,8 @@ class AppModule(appModuleHandler.AppModule):
     script_wheelBack.category=SCRCAT_AUDACITY
 
     def script_toggleAudacityInputHelp(self,gesture):
+        ui.message(str(api.getNavigatorObject().windowHandle))
+        return
         self._audacityInputHelp=not self._audacityInputHelp
         stateOn = 'Audacity input help on'
         stateOff = 'Audacity input help off'
@@ -471,24 +487,22 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     appName='Audacity'
 
     def __init__(self, *args, **kwargs):
+        tones.beep(1000,40)
         super(Track, self).__init__(*args, **kwargs)
+        tones.beep(4000,40)
         self.appName=self.appModule.appName
 
     def initOverlayClass(self):
+        #tones.beep(1000,40)
         pass
 
     def event_gainFocus(self):
+        self._update_Toolbars()
         #if self.parent.childCount !=1:
         super(Track,self).event_gainFocus()
-        if not toolBars.has_key(self.windowHandle):
-            super(Track,self)._update_Toolbars(api.getForegroundObject())
         if len(self.navGestures)==0:
             self._mapAudacityKeys
         self.bindGestures(self.navGestures)
-        #inputCore.manager._captureFunc = self._inputCaptor
-        #self.SelectionToolBar=toolBars.get('Selection Toolbar').getChild
-        #self.transportToolBar=toolBars.get('Transport Toolbar').getChild
-        self.mainMenu=self.parent.parent.parent.previous.getChild
 
     def transportAction(self,button,action=None):
         target=self.transportToolBar(button)
@@ -629,13 +643,15 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
         if lastStatus=='Recording.':
             return
         elif lastStatus=='Playing.':
-            if which==2:
+            if which in [2,4]:
                 queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_start.wav')
-            elif which==3:
+            elif which in [3,5]:
                 queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_end.wav')
         elif lastStatus in [u'Stopped.', u'Playing Paused.', u'blank', None]:
             if which in [0,2]:
                 ui.message(self.getTime(11))
+            elif which in [4,5]:
+                ui.message(self.getTime(15)+u' Selected')
             elif which in [1,3]:
                 if u'Paused' in lastStatus:
                     ui.message(self.getTime(11))
@@ -643,11 +659,17 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
                     ui.message(self.getTime(17))
                     pass
 
+    # commands that should speak the new selection length
+    def script_SelectiontoStart(self, gesture):
+        self.autoTime(gesture,4)
+    def script_SelectiontoEnd(self, gesture):
+        self.autoTime(gesture,5)
+    def script_TrackStarttoCursor(self, gesture):
+        self.autoTime(gesture, 4)
+    def script_CursortoTrackEnd(self, gesture):
+        self.autoTime(gesture, 5)
+    #commands that should speak the start or end time of the selection
     def script_AddLabelAtPlaybackPosition(self, gesture):
-        self.autoTime(gesture)
-    def script_SelectionStart(self, gesture):
-        self.autoTime(gesture)
-    def script_SelectionEnd(self, gesture):
         self.autoTime(gesture)
     def script_PlayStopandSetCursor(self, gesture):
         self.autoTime(gesture)

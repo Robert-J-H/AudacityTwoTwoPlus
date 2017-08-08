@@ -37,6 +37,13 @@ canditatesEndTime = [
     u'Cursor Long Jump Right',
 ]
 
+canditatesLength = [
+    u'Selection to Start',
+    u'Selection to End',
+    u'Track Start to Cursor',
+    u'Cursor to Track End',
+]
+
 shouldNotAutoSpeak = (
     u'Cursor Left', 
     u'Cursor Short Jump Left', 
@@ -56,7 +63,6 @@ shouldNotAutoSpeak = (
     u'Long seek right during playback'
     #u'Left at Playback Position', 
     #u'Right at Playback Position', 
-    u'Pause', 
     u'Pause', 
     u'Play/Stop', 
     u'Loop Play', 
