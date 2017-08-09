@@ -140,11 +140,15 @@ class AppModule(appModuleHandler.AppModule):
         if obj.windowClassName==u'#32770' and obj.role==controlTypes.ROLE_PANE:
             #obj.role=controlTypes.ROLE_DIALOG
             obj.isFocusable=False
+        # avoid the ambersand in dialogs
         if obj.windowClassName=='Button' and not obj.role in [controlTypes.ROLE_MENUBAR, controlTypes.ROLE_MENUITEM, controlTypes.ROLE_POPUPMENU]:
             obj.name = winUser.getWindowText(obj.windowHandle).replace('&','')
-        if obj.role==controlTypes.ROLE_PANE and obj.name and (obj.name.startswith('Audacity ') or obj.name=='Timeline'):
+        # define the toolbars as grouping for the controls that it holds
+        # such that the group name is spoken automatically on focus entered.
+        if obj.role==controlTypes.ROLE_PANE and obj.name and (obj.name.startswith('Audacity ') and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR or obj.name=='Timeline'):
             obj.role=controlTypes.ROLE_GROUPING
             obj.name=obj.name.lstrip('Audacity')
+        # groupings for controls in e.g. preferences
         if obj and obj.role in [5, 6, 8, 9, 13, 24, 36]:
             # Code snippet by David
             # work around for reading group boxes. In Audacity, any group box is a previous

@@ -51,6 +51,7 @@ shouldNotAutoSpeak = (
     u'Cursor Short Jump Left', 
     u'Cursor Long Jump Left', 
     u'Set (or Extend) Left Selection', 
+    u'Left at Playback Position', 
     u'Selection Extend Left', 
     u'Selection Contract Left',
     u'Short seek left during playback',
@@ -62,8 +63,7 @@ shouldNotAutoSpeak = (
     u'Selection Extend Right', 
     u'Selection Contract Right', 
     u'Short seek right during playback',
-    u'Long seek right during playback'
-    u'Left at Playback Position', 
+    u'Long seek right during playback',
     u'Right at Playback Position', 
     u'Pause', 
     u'Play/Stop', 
@@ -387,4 +387,16 @@ fullMenuSet = [
     u'Move focused track to top',
     u'Move focused track to bottom',
     u'Full screen (on/off)',
+]
+
+silentStateChange=[
+    u'Play Cut Preview', 
+    u'Play One Second', 
+    u'Play Before Selection Start', 
+    u'Play After Selection Start', 
+    u'Play Before and After Selection Start', 
+    u'Play Before Selection End', 
+    u'Play After Selection End', 
+    u'Play Before and After Selection End', 
+    u'Play To Selection', 
 ]
