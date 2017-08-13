@@ -71,12 +71,19 @@ class AppModule(appModuleHandler.AppModule):
         self._audacityInputHelp=False
         super(AppModule, self).__init__(*args, **kwargs)
 
+    def _getByVersion(self, control):
+        if int(filter(lambda x: x.isdigit(), self.productVersion[:-1]))>=220:
+            return {'audio':11, 'start':14, 'length':15, 'center':16,'end':17}.get(control)
+        else:
+            return {'audio':14, 'start':11, 'length':12, 'end':12}.get(control)
+
     def speakAction(self, action):
         queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, action)
 
     def event_appModule_gainFocus(self):
         self.bindGesture('kb:applications', 'replaceApplications')
         inputCore.manager._captureFunc = self._inputCaptor
+        
 
     def event_appModule_loseFocus(self):
         inputCore.manager._captureFunc = None
@@ -171,9 +178,11 @@ class AppModule(appModuleHandler.AppModule):
 
     def _get_Menus(self, obj):
         global menuFull
+        #numMenus = 10 if self.version>=220 else 9
         if len(menuFull)==0 and obj.previous and obj.previous.role==controlTypes.ROLE_MENUBAR:
             menus=obj.previous.children
-            if len(menus) >=10:
+            # 9 menus for V2.1.3 and 10(+2) for V2.2.0
+            if len(menus) >=9:
                 signet=dataPath+'signet.wav'
                 playWaveFile(signet)
                 for i in range(len(menus)):
@@ -262,8 +271,8 @@ class AppModule(appModuleHandler.AppModule):
         nextHandler()
 
     def script_states(self,gesture):
-        ui.message(os.path.join(os.path.dirname(__file__), "data"))
-        #ui.browseableMessage(''.join((x+'\n' for x in toolBars.iterkeys())),'')
+        ui.browseableMessage(''.join((x+'\n' for x in toolBars.get(api.getForegroundObject().windowHandle).iterkeys())),'')
+        #ui.browseableMessage(repr(toolBars))
     script_states.__doc__=_('Reports all tool bars that are currently docked.')
     script_states.category=SCRCAT_AUDACITY
 
@@ -558,7 +567,7 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 
 
     def script_announceAudioPosition(self,gesture):
-        audioPosition=self.getTime(11)
+        audioPosition=self.getTime(self._getByVersion('audio'))
         repeatCount=scriptHandler.getLastScriptRepeatCount()
         if repeatCount==0:
             ui.message(audioPosition)
@@ -570,9 +579,9 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     def script_announceStart(self, gesture):
         repeatCount=scriptHandler.getLastScriptRepeatCount()
         if repeatCount==0:
-            start = self.getTime(14)+' Start'
+            start = self.getTime(self._getByVersion('start'))+' Start'
         else:
-            start = self.getTime(16)+' Center'
+            start = self.getTime(self._getByVersion('center'))+' Center'
         ui.message(start)
     script_announceStart.__doc__=_('Reports the cursor position or left selection boundary.')
     script_announceStart.category=SCRCAT_AUDACITY
@@ -580,9 +589,9 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
     def script_announceEnd(self, gesture):
         repeatCount=scriptHandler.getLastScriptRepeatCount()
         if repeatCount==0:
-            end = self.getTime(17)+' end'
+            end = self.getTime(self._getByVersion('end'))+' end'
         else:
-            end = self.getTime(15)+' long'
+            end = self.getTime(self._getByVersion('length'))+' long'
         ui.message(end)
     script_announceEnd.__doc__=_('Reports the right selection boundary if end is chosen in the selection toolbar. Otherwise, the selection length is reported, followed by the word long.')
     script_announceEnd.category=SCRCAT_AUDACITY
@@ -592,13 +601,13 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
         selChoice=''
         selTracks=[]
         if repeatCount==0:
-            selTracks=['Selected are: ']
+            selTracks=['Selected ']
             selChoice='Select On'
         elif repeatCount==1:
-            selTracks=['Muted  are: ']
+            selTracks=['Muted ']
             selChoice='Mute On'
         elif repeatCount==2:
-            selTracks=['Soloed  are: ']
+            selTracks=['Soloed  ']
             selChoice='Solo On'
         for track in self.parent.children:
             #if controlTypes.STATE_SELECTED in track.states:
@@ -609,8 +618,12 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
                 except NotImplementedError:
                     pass
         if len(selTracks)==1:
-            ui.message('No Tracks '+selTracks[0].rstrip(' are: '))
+            ui.message('No Tracks '+selTracks[0])
+        elif len(selTracks)==2:
+            selTracks[0]+=u'is: '
+            ui.message(', '.join(selTracks)) 
         else:
+            selTracks[0]+='are: '
             ui.message(', '.join(selTracks)) 
     script_reportSelectedTracks.__doc__=_('Reports  the currently selected tracks, if any. Reports muted tracks if pressed twice or soloed tracks if pressed three times.')
     script_reportSelectedTracks.category=SCRCAT_AUDACITY
@@ -662,14 +675,14 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
                 queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_end.wav')
         elif lastStatus in [u'Stopped.', u'Playing Paused.', u'blank', None]:
             if which in [0,2]:
-                ui.message(self.getTime(11))
+                ui.message(self.getTime(self._getByVersion('audio')))
             elif which in [4,5]:
-                ui.message(self.getTime(15)+u' Selected')
+                ui.message(self.getTime(self._getByVersion('length'))+u' Selected')
             elif which in [1,3]:
                 if u'Paused' in lastStatus:
-                    ui.message(self.getTime(11))
+                    ui.message(self.getTime(self._getByVersion('audio')))
                 else:
-                    ui.message(self.getTime(17))
+                    ui.message(self.getTime(self._getByVersion('end')))
                     pass
 
     # commands that should speak the new selection length
