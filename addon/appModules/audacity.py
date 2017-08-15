@@ -150,11 +150,11 @@ class AppModule(appModuleHandler.AppModule):
         # avoid the ambersand in dialogs
         if obj.windowClassName=='Button' and not obj.role in [controlTypes.ROLE_MENUBAR, controlTypes.ROLE_MENUITEM, controlTypes.ROLE_POPUPMENU]:
             obj.name = winUser.getWindowText(obj.windowHandle).replace('&','')
-        # define the toolbars as grouping for the controls that it holds
-        # such that the group name is spoken automatically on focus entered.
+        # define the toolbars as real Toolbars
+        # such that the name is spoken automatically on focus entered.
         if obj.role==controlTypes.ROLE_PANE and obj.name and (obj.name.startswith('Audacity ') and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR or obj.name=='Timeline'):
-            obj.role=controlTypes.ROLE_GROUPING
-            obj.name=obj.name.lstrip('Audacity')
+            obj.role=controlTypes.ROLE_TOOLBAR
+            obj.name=obj.name.lstrip('Audacity ').rstrip('Toolbar')
         # groupings for controls in e.g. preferences
         if obj and obj.role in [5, 6, 8, 9, 13, 24, 36]:
             # Code snippet by David
@@ -206,7 +206,7 @@ class AppModule(appModuleHandler.AppModule):
         if toolBars.has_key(winHandle):
             return
         else:
-            activeToolBars={tb.name.lstrip(u'Audacity ') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_GROUPING}
+            activeToolBars={tb.name.lstrip(u'Audacity ').rstrip('Toolbar') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_TOOLBAR}
             if len(activeToolBars)>=13: 
                 toolBars[winHandle]=activeToolBars
                 return True
@@ -333,7 +333,7 @@ class AppModule(appModuleHandler.AppModule):
         api.copyToClip(temp)
 
     def script_announcePlaybackPeak(self,gesture):
-        pPeak=self.getToolBar('Playback Meter Toolbar').getChild(1).name.partition('Peak')[2] 
+        pPeak=self.getToolBar('Playback Meter ').getChild(1).name.partition('Peak')[2] 
         ui.message(pPeak)
     script_announcePlaybackPeak.__doc__=_('Reports the current playback level.')
     script_announcePlaybackPeak.category=SCRCAT_AUDACITY
@@ -341,7 +341,7 @@ class AppModule(appModuleHandler.AppModule):
     def script_announceRecordingPeak(self,gesture):
         repeatCount=scriptHandler.getLastScriptRepeatCount()
         #if repeatCount==0:
-        rPeak=self.getToolBar('Recording Meter Toolbar').getChild(1).name.partition('Peak')[2] 
+        rPeak=self.getToolBar('Recording Meter ').getChild(1).name.partition('Peak')[2] 
         ui.message(rPeak)
     script_announceRecordingPeak.__doc__=_('Reports the current recording  level.')
     script_announceRecordingPeak.category=SCRCAT_AUDACITY
@@ -424,7 +424,7 @@ class AppModule(appModuleHandler.AppModule):
     script_toggleAudacityInputHelp.category=SCRCAT_AUDACITY
 
     def getTime(self,child):
-        rslt=self.getToolBar('Selection Toolbar').getChild(child).name.replace(',','')
+        rslt=self.getToolBar('Selection ').getChild(child).name.replace(',','')
         rslt=rslt.replace('+', ' ')
         for index, c in enumerate(rslt):
             if c.isdigit(): 
@@ -619,11 +619,8 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
                     pass
         if len(selTracks)==1:
             ui.message('No Tracks '+selTracks[0])
-        elif len(selTracks)==2:
-            selTracks[0]+=u'is: '
-            ui.message(', '.join(selTracks)) 
         else:
-            selTracks[0]+='are: '
+            selTracks[0]+=u'is: ' if len(selTracks)==2 else u' are:'
             ui.message(', '.join(selTracks)) 
     script_reportSelectedTracks.__doc__=_('Reports  the currently selected tracks, if any. Reports muted tracks if pressed twice or soloed tracks if pressed three times.')
     script_reportSelectedTracks.category=SCRCAT_AUDACITY
