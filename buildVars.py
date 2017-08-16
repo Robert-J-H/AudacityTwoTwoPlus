@@ -23,7 +23,7 @@ addon_info = {
 	"addon_description" : _("""Provides enhanced Accessibility for the Multi-track editor Audacity, 
 such as automatic and manual timeannouncment, shortcut help and  integration of the JAWS guide."""),
 	# version
-	"addon_version" : "{}.{}-dev".format(tl.tm_year, tl.tm_yday),
+	"addon_version" : "{}.{}-dev".format(str(tl.tm_year)[2:], tl.tm_yday),
 	# Author(s)
 	"addon_author" : u"Robert Hänggi <aarjay.robert@gmail.com>",
 	# URL for the add-on documentation support

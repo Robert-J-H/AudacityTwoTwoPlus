@@ -104,7 +104,8 @@ class AppModule(appModuleHandler.AppModule):
         elif lookup and not  lookup[0] in shouldNotAutoSpeak:
             queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[0])
         return not self._audacityInputHelp
-        # never comes here
+        # never comes here, only referencing original code
+        # but we don't want the keys to be spoken
         textList = [gesture.displayName]
         scriptName=u''
         script = gesture.script
@@ -137,7 +138,7 @@ class AppModule(appModuleHandler.AppModule):
         if (windowText=='Track Panel' and windowControlID==1003 and childID>=0):
             clsList.insert(0, Track)
             try:
-                if 'Label' in name:
+                if name.endswith(u' Label Track'):
                     clsList.insert(0, labelTrack)
                 return
             except:
@@ -147,7 +148,7 @@ class AppModule(appModuleHandler.AppModule):
         if obj.windowClassName==u'#32770' and obj.role==controlTypes.ROLE_PANE:
             #obj.role=controlTypes.ROLE_DIALOG
             obj.isFocusable=False
-        # avoid the ambersand in dialogs
+        # avoid the ampersand in dialogs
         if obj.windowClassName=='Button' and not obj.role in [controlTypes.ROLE_MENUBAR, controlTypes.ROLE_MENUITEM, controlTypes.ROLE_POPUPMENU]:
             obj.name = winUser.getWindowText(obj.windowHandle).replace('&','')
         # define the toolbars as real Toolbars
@@ -170,6 +171,9 @@ class AppModule(appModuleHandler.AppModule):
             # rearrange the items in the recent files menu such
             #            that the file name comes before the full qualified path.
             obj.name=u'{2}, {0}{1}{2}'.format(*obj.name.rpartition('\\'))
+        # append percent to slider positions
+        if obj and obj.role==24 and obj.name==None and obj.previous and obj.previous.role==8:
+            obj.description=' %'
 
     def replaceMulti(self, item, old, new):
         while len(old)!=0:
@@ -178,7 +182,6 @@ class AppModule(appModuleHandler.AppModule):
 
     def _get_Menus(self, obj):
         global menuFull
-        #numMenus = 10 if self.version>=220 else 9
         if len(menuFull)==0 and obj.previous and obj.previous.role==controlTypes.ROLE_MENUBAR:
             menus=obj.previous.children
             # 9 menus for V2.1.3 and 10(+2) for V2.2.0
@@ -187,7 +190,6 @@ class AppModule(appModuleHandler.AppModule):
                 playWaveFile(signet)
                 for i in range(len(menus)):
                     queueHandler.queueFunction(queueHandler.eventQueue,self.getMenuTree,menus[i])
-
 
     def _update_Toolbars(self,callback=0):
         global toolBars
@@ -226,7 +228,6 @@ class AppModule(appModuleHandler.AppModule):
             self._update_Toolbars()
             return toolBars[wh].get(key)
 
-
     def event_foreground(self, obj, nextHandler):
         speech.cancelSpeech()
         self._get_Menus(obj)
@@ -235,14 +236,11 @@ class AppModule(appModuleHandler.AppModule):
 
     def event_gainFocus(self, obj, nextHandler):
         # Nyquist effects with an unspoken  unit and an unnamed slider 
-        if obj and obj.role==8 and obj.next and obj.next.role==24 and not(obj.next.name) and obj.next.next and obj.previous.location[0]!=obj.next.next.location[0]:
+        if obj and obj.role==8 and obj.windowControlID in xrange(12000,13000) \
+            and obj.next and obj.next.role==24 and obj.next.name==None \
+            and obj.next.next and obj.previous.location[0]!=obj.next.next.location[0]:
             try:
-                obj.name+=' '+obj.next.next.name
-            except:
-                pass
-        if obj and obj.role==24 and not(obj.name) and obj.previous and obj.previous.role==8:
-            try:
-                obj.name=obj.previous.value
+                obj.value+=' '+obj.next.next.name
             except:
                 pass
         #Mainly for the Compressor effect
@@ -259,6 +257,17 @@ class AppModule(appModuleHandler.AppModule):
             name, obj.name=obj.name, None
             if name==u'DropDown':
                 KIGesture.fromName('downArrow').send()
+        nextHandler()
+
+    def event_valueChange(self, obj, nextHandler):
+        if obj and obj.hasFocus and obj.role==24 and obj.name==None and obj.previous and obj.previous.role==8:
+            #if eventHandler.isPendingEvents('valueChange',self):
+            tones.beep(3000,20,0,20)
+            try:
+                speech.speakObjectProperties(obj.previous, value=True, reason=controlTypes.REASON_CHANGE)
+                #ui.message(obj.previous.value)
+            except:
+                pass
         nextHandler()
 
     def event_nameChange(self, obj, nextHandler):
