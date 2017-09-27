@@ -21,7 +21,7 @@ addon_info = {
 	# Add-on description
 	# Translators: Long description to be shown for this add-on on add-on information from add-ons manager
 	"addon_description" : _("""Provides enhanced Accessibility for the Multi-track editor Audacity, 
-such as automatic and manual timeannouncment, shortcut help and  integration of the JAWS guide."""),
+such as automatic and manual time announcement, shortcut help and  integration of the JAWS guide."""),
 	# version
 	"addon_version" : "{}.{}-dev".format(str(tl.tm_year)[2:], tl.tm_yday),
 	# Author(s)
