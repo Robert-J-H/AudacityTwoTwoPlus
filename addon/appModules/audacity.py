@@ -1,10 +1,19 @@
-# Audacity App Module for NVDA
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import, division, unicode_literals
+# Audacity App Module for NVDA
 # Copyright (c) 2017 Robert Hänggi and NVDA Access
-
+import os
+import sys
+impPath = os.path.abspath(os.path.dirname(__file__))
+sys.path.append(impPath)
+from builtins import zip
+from builtins import str
+from builtins import range
+#from past.utils import old_div
+del sys.path[-1]
 import appModuleHandler
 from appModules import __path__ as paths
-from  appVars import *
+from  .appVars import *
 import api
 import ui
 import winUser
@@ -16,8 +25,8 @@ import eventHandler
 import queueHandler
 import gui
 import inputCore
-from keyboardHandler import KeyboardInputGesture as KIGesture
 import keyboardHandler
+from keyboardHandler import KeyboardInputGesture as KIGesture
 import NVDAObjects.IAccessible
 import speech
 import scriptHandler
@@ -34,11 +43,12 @@ from  nvwave import playWaveFile
 
 SCRCAT_AUDACITY = _('Audacity')
 MOUSEEVENTF_WHEEL=0x0800
-dataPath=os.path.join(os.path.dirname(__file__), "data\\")
+dataPath=os.path.join(os.path.dirname(__file__).decode('mbcs'), 'data\\')
 menuFull=[]
 assignedShortcuts={}
 toolBars={}
-lastStatus=u'Stopped.'
+lastStatus='Stopped.'
+suppressStatus=False
 
 def firstNum(string):
 	for i, c in enumerate(string):
@@ -52,8 +62,8 @@ def getPipeFile():
 	# in the analyze menu of Audacity.
 	with open(os.environ['userprofile']+'\\audacity_scr_rdr_pipe.tmp') as file:
 		data = file.read().splitlines()
-		data = list(map(lambda x: x.title(), data))
-	return dict(zip(data[::2],data[1::2]))
+		data = list([x.title() for x in data])
+	return dict(list(zip(data[::2],data[1::2])))
 
 class AppModule(appModuleHandler.AppModule):
 	pastTime=currentTime=None
@@ -71,7 +81,7 @@ class AppModule(appModuleHandler.AppModule):
 		super(AppModule, self).__init__(*args, **kwargs)
 
 	def _getByVersion(self, control):
-		if int(filter(lambda x: x.isdigit(), self.productVersion[:-1]))>=220:
+		if int(''.join(x for x in self.productVersion[:-1] if x.isdigit()))>=220:
 			return {'audio':11, 'start':14, 'length':15, 'center':16,'end':17}.get(control)
 		else:
 			return {'audio':14, 'start':11, 'length':12, 'end':12}.get(control)
@@ -90,25 +100,32 @@ class AppModule(appModuleHandler.AppModule):
 		controlTypes.silentRolesOnFocus.remove(controlTypes.ROLE_PANE)
 
 	def _inputCaptor(self, gesture):
-		if api.getFocusObject().windowControlID != 1003 or lastStatus==u'Recording.' or gesture.isNVDAModifierKey or gesture.isModifier:
+		global suppressStatus
+		if api.getFocusObject().windowControlID != 1003 or lastStatus=='Recording.' or gesture.isNVDAModifierKey or gesture.isModifier:
 			return True
 		script = gesture.script
 		lookup=assignedShortcuts.get(gesture.displayName, None) 
 		if self._audacityInputHelp:
-			scriptName = scriptHandler.getScriptName(script) if script else u''
+			scriptName = scriptHandler.getScriptName(script) if script else ''
 			if lookup:
 				queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[2]+'->'+lookup[0])
 			if scriptName and not lookup:
 				queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, scriptName)
 			if scriptName == 'toggleAudacityInputHelp':
 				return True
-		elif lookup and not  lookup[0] in shouldNotAutoSpeak:
-			queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[0])
-		return not self._audacityInputHelp
+		else:
+			# don't speak "Stopped" for preview commands
+			if lookup and lookup[0] in shouldNotReportStatus:
+				suppressStatus=True
+			else:
+				suppressStatus=False
+			if lookup and not  lookup[0] in shouldNotAutoSpeak:
+				queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[0])
+			return not self._audacityInputHelp
 		# never comes here, only referencing original code
 		# but we don't want the keys to be spoken
 		textList = [gesture.displayName]
-		scriptName=u''
+		scriptName=''
 		script = gesture.script
 		if script:
 			scriptName = scriptHandler.getScriptName(script)
@@ -139,14 +156,14 @@ class AppModule(appModuleHandler.AppModule):
 		if (windowText=='Track Panel' and windowControlID==1003 and childID>=0):
 			clsList.insert(0, Track)
 			try:
-				if name.endswith(u' Label Track'):
+				if name.endswith(' Label Track'):
 					clsList.insert(0, labelTrack)
 				return
 			except:
 				KIGesture.fromName('downArrow').send()
 
 	def event_NVDAObject_init(self,obj):
-		if obj.windowClassName==u'#32770' and obj.role==controlTypes.ROLE_PANE:
+		if obj.windowClassName=='#32770' and obj.role==controlTypes.ROLE_PANE:
 			#obj.role=controlTypes.ROLE_DIALOG
 			obj.isFocusable=False
 		# avoid the ampersand in dialogs
@@ -166,19 +183,19 @@ class AppModule(appModuleHandler.AppModule):
 			groupBox = IAccessibleHandler.findGroupboxObject(obj)
 			if groupBox:
 				obj.container = groupBox
-		if obj.windowClassName==u'#32768' and obj.role == controlTypes.ROLE_POPUPMENU:
+		if obj.windowClassName=='#32768' and obj.role == controlTypes.ROLE_POPUPMENU:
 			obj.name='DropDown'
 		if obj.role==11 and '\\' in obj.name:
 			# rearrange the items in the recent files menu such
 			#            that the file name comes before the full qualified path.
-			obj.name=u'{2}, {0}{1}{2}'.format(*obj.name.rpartition('\\'))
+			obj.name='{2}, {0}{1}{2}'.format(*obj.name.rpartition('\\'))
 		# append percent to slider positions
 		if obj and obj.role==24 and obj.name==None and obj.previous and obj.previous.role==8:
 			obj.description=' %'
 
 	def replaceMulti(self, item, old, new):
 		while len(old)!=0:
-			item=unicode(item).replace(old.pop(0), new.pop(0))
+			item=str(item).replace(old.pop(0), new.pop(0))
 		return item
 
 	def _get_Menus(self, obj):
@@ -206,10 +223,10 @@ class AppModule(appModuleHandler.AppModule):
 			return
 		winHandle=obj.windowHandle
 		winClass=obj.windowClassName
-		if toolBars.has_key(winHandle):
+		if winHandle in toolBars:
 			return
 		else:
-			activeToolBars={tb.name.lstrip(u'Audacity ').rstrip('Toolbar') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_TOOLBAR}
+			activeToolBars={tb.name.lstrip('Audacity ').rstrip('Toolbar') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_TOOLBAR}
 			if len(activeToolBars)>=13: 
 				toolBars[winHandle]=activeToolBars
 				return True
@@ -223,9 +240,9 @@ class AppModule(appModuleHandler.AppModule):
 		if obj.name==None:
 			obj=api.getFocusAncestors()[2]
 		wh=obj.windowHandle
-		if toolBars.has_key(wh):
+		if wh in toolBars:
 			return toolBars[wh].get(key)
-		elif obj.windowClasName==u'wxWindowNR':
+		elif obj.windowClasName=='wxWindowNR':
 			self._update_Toolbars()
 			return toolBars[wh].get(key)
 
@@ -237,7 +254,7 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_gainFocus(self, obj, nextHandler):
 		# Nyquist effects with an unspoken  unit and an unnamed slider 
-		if obj and obj.role==8 and obj.windowControlID in xrange(12000,13000) \
+		if obj and obj.role==8 and obj.windowControlID in range(12000,13000) \
 			and obj.next and obj.next.role==24 and obj.next.name==None \
 			and obj.next.next and obj.previous.location[0]!=obj.next.next.location[0]:
 			try:
@@ -253,10 +270,10 @@ class AppModule(appModuleHandler.AppModule):
 		# suppress things like[Panel, Track View Table, TABLEROW...] FURING FOCUS GAINING
 		if obj.windowText =='Track Panel':
 			speech.cancelSpeech()
-		if obj.windowClassName==u'#32768' and obj.role == controlTypes.ROLE_POPUPMENU:
+		if obj.windowClassName=='#32768' and obj.role == controlTypes.ROLE_POPUPMENU:
 			# focus on first item for context menu
 			name, obj.name=obj.name, None
-			if name==u'DropDown':
+			if name=='DropDown':
 				KIGesture.fromName('downArrow').send()
 		nextHandler()
 
@@ -267,23 +284,25 @@ class AppModule(appModuleHandler.AppModule):
 			try:
 				# A bug in the Nyquist sliders, there's always a zero appended 
 				val=obj.previous.value.rstrip('0')
-				val += u'0' if val.endswith(u'.') else ''
+				val += '0' if val.endswith('.') else ''
 				ui.message(val)
 			except:
 				pass
 		nextHandler()
 
 	def event_nameChange(self, obj, nextHandler):
-		global lastStatus
+		global lastStatus, suppressStatus
 		name=obj.name
-		if name in ['Stopped.','Playing Paused.', 'Recording Paused.'] and name !=lastStatus:
-			ui.message(str(name))
+		if not suppressStatus and \
+			name in ['Stopped.','Playing Paused.', 'Recording Paused.'] and \
+			name !=lastStatus:
+			ui.message(name.rstrip('.'))
 		if name in ['Recording.','Playing.','Stopped.','Playing Paused.', 'Recording Paused.']:
 			lastStatus=name
 		nextHandler()
 
 	def script_states(self,gesture):
-		ui.browseableMessage(''.join((x+'\n' for x in toolBars.get(api.getForegroundObject().windowHandle).iterkeys())),'')
+		ui.browseableMessage(''.join((x+'\n' for x in toolBars.get(api.getForegroundObject().windowHandle).keys())),'')
 		#ui.browseableMessage(repr(toolBars))
 	script_states.__doc__=_('Reports all tool bars that are currently docked.')
 	script_states.category=SCRCAT_AUDACITY
@@ -293,27 +312,27 @@ class AppModule(appModuleHandler.AppModule):
 		menuFull+=[x for x in obj.recursiveDescendants if x and x.role == 11]
 
 	def script_guide(self, gesture):
-		with open(str(dataPath+'Audacity 2.2.0 Guide.htm'),'r') as guide:
+		with open(dataPath+'Audacity 2.2.0 Guide.htm','r') as guide:
 			guide=guide.read()
 			speech.cancelSpeech
 			ui.browseableMessage(guide,'Guide',True)
-	script_guide.__doc__=_(u'Shows the famous JAWS Guide for Audacity as browseable document. All quick navigation keys allowed including find dialog and elements list.')
+	script_guide.__doc__=_('Shows the famous JAWS Guide for Audacity as browseable document. All quick navigation keys allowed including find dialog and elements list.')
 	script_guide.category=SCRCAT_AUDACITY
 
 	def _mapAudacityKeys(self):
 		if len(menuFull)>0:
 			global assignedShortcuts
 			for obj  in menuFull:
-				#if u'\x09' in obj.name:
-					cmd=obj.name.rpartition(u'\x09')
+				#if '\x09' in obj.name:
+					cmd=obj.name.rpartition('\x09')
 					ncmd=self.replaceMulti(cmd[2], \
-						[u' ', u'Ctrl', u'Left', u'Right', u'Up', u'Down', u'Pageuparrow', u'Pagedownarrow', u'Return'], \
-						[u'', u'control',u'leftarrow',u'rightarrow', 'uparrow', u'downarrow', u'pageup', u'pagedown', u'enter']) 
+						[' ', 'Ctrl', 'Left', 'Right', 'Up', 'Down', 'Pageuparrow', 'Pagedownarrow', 'Return'], \
+						['', 'control','leftarrow','rightarrow', 'uparrow', 'downarrow', 'pageup', 'pagedown', 'enter']) 
 					ncmd=ncmd.lower()
 					try:
 						ncmd=KIGesture.fromName(ncmd)
 						if cmd[0] in canditatesStartTime or cmd[0] in canditatesEndTime or cmd[0] in canditatesLength:
-							self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd[0], [u' ',u'(',u')',u'/'], [u'', u'', u'', u''])
+							self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd[0], [' ','(',')','/'], ['', '', '', ''])
 						assignedShortcuts[ncmd.displayName]=(cmd[0], obj, obj.parent.name)
 					except KeyError:
 						pass
@@ -323,7 +342,7 @@ class AppModule(appModuleHandler.AppModule):
 		out=''
 		for x in menuFull:
 			if x.role==11 and not controlTypes.STATE_HASPOPUP in x.states:
-				out+=repr(x.name.partition(u'\x09')[0])+u',\n'
+				out+=repr(x.name.partition('\x09')[0])+',\n'
 		ui.browseableMessage(out)
 	script_info.__doc__=_('debugging info')
 	script_info.category=SCRCAT_AUDACITY
@@ -363,12 +382,12 @@ class AppModule(appModuleHandler.AppModule):
 		obj=api.getFocusObject()
 		if repeatCount==0:
 			if obj.role==controlTypes.ROLE_EDITABLETEXT:
-				text=unicode(round(60/self.tapMedian,1))
+				text=str(round(old_div(60,self.tapMedian),1))
 				self._paste_safe(text, obj)
 			else:
-				ui.message(str(round(60/self.tapMedian,1))+' bpm')
+				ui.message(str(round(old_div(60,self.tapMedian),1))+' bpm')
 		elif repeatCount==1:
-			tempo=(60/self.tapMedian)
+			tempo=(old_div(60,self.tapMedian))
 			text='Tempo not in classical range'
 			for i in range(0, len(self.__tempi)-2,2):
 				if tempo>self.__tempi[i] and tempo<=self.__tempi[i+2]:
@@ -396,7 +415,7 @@ class AppModule(appModuleHandler.AppModule):
 					self.deltaTime.remove(self.tapMedian+outlayer)
 				except:
 					self.deltaTime.remove(self.tapMedian-outlayer)
-			self.tapMedian=sum(self.deltaTime)/len(self.deltaTime)
+			self.tapMedian=old_div(sum(self.deltaTime),len(self.deltaTime))
 			self.tapCounter=(self.tapCounter+1)%4
 	script_tempoTapping.__doc__=_('use this key  to tap along for some measures. The found tempo can be read out by the announce temp shortcut (normally NVDA+pause).')
 	script_tempoTapping.category=SCRCAT_AUDACITY
@@ -563,7 +582,7 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 
 	def getTransportState(self,button):
 		try:
-			stateConsts = dict((const, name) for name, const in controlTypes.__dict__.iteritems() if name.startswith('STATE_'))
+			stateConsts = dict((const, name) for name, const in controlTypes.__dict__.items() if name.startswith('STATE_'))
 			ret = ', '.join(
 				stateConsts.get(state) or str(state)
 				for state in button.states)
@@ -632,7 +651,7 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 		if len(selTracks)==1:
 			ui.message('No Tracks '+selTracks[0])
 		else:
-			selTracks[0]+=u'is: ' if len(selTracks)==2 else u' are:'
+			selTracks[0]+='is: ' if len(selTracks)==2 else ' are:'
 			ui.message(', '.join(selTracks)) 
 	script_reportSelectedTracks.__doc__=_('Reports  the currently selected tracks, if any. Reports muted tracks if pressed twice or soloed tracks if pressed three times.')
 	script_reportSelectedTracks.category=SCRCAT_AUDACITY
@@ -682,13 +701,13 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 				queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_start.wav')
 			elif which in [3,5]:
 				queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_end.wav')
-		elif lastStatus in [u'Stopped.', u'Playing Paused.', u'blank', None]:
+		elif lastStatus in ['Stopped.', 'Playing Paused.', 'blank', None]:
 			if which in [0,2]:
 				ui.message(self.getTime(self._getByVersion('audio')))
 			elif which in [4,5]:
-				ui.message(self.getTime(self._getByVersion('length'))+u' Selected')
+				ui.message(self.getTime(self._getByVersion('length'))+' Selected')
 			elif which in [1,3]:
-				if u'Paused' in lastStatus:
+				if 'Paused' in lastStatus:
 					ui.message(self.getTime(self._getByVersion('audio')))
 				else:
 					ui.message(self.getTime(self._getByVersion('end')))
