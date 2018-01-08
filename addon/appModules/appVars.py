@@ -4,17 +4,15 @@
 
 canditatesStartTime = [
 	'Add Label At Playback Position',
-	'Selection Start',
-	'Selection End',
 	'Play/Stop and Set Cursor',
 	'Selection Start',
 	'Selection End',
 	'Track Start',
 	'Track End',
-	'Previous Clip Boundary',
-	'Next Clip Boundary',
 	'Project Start',
 	'Project End',
+	'Previous Clip Boundary',
+	'Next Clip Boundary',
 	'Short seek left during playback',
 	'Long seek left during playback',
 	'Selection Extend Left',
@@ -46,6 +44,7 @@ canditatesLength = [
 	'Cursor to Track End',
 ]
 
+# Don't speak e.g. "Stopped" after a cut preview or similar.
 shouldNotReportStatus = [
 	'Play Cut Preview', 
 	'Play Cut Preview-at-Speed',

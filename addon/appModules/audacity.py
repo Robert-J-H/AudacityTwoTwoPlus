@@ -13,11 +13,10 @@ from builtins import range
 del sys.path[-1]
 import appModuleHandler
 from appModules import __path__ as paths
-from  .appVars import *
+from .appVars import *
 import api
 import ui
 import winUser
-import os
 import characterProcessing
 import controlTypes
 import IAccessibleHandler
@@ -34,13 +33,13 @@ import textInfos
 import time
 import tones
 from logHandler import log
-from  nvwave import playWaveFile
+from nvwave import playWaveFile
 # import review
 # import screenBitmap
 # import ctypes
 # import treeInterceptorHandler
 # import wx
-
+import winsound
 SCRCAT_AUDACITY = _('Audacity')
 MOUSEEVENTF_WHEEL=0x0800
 dataPath=os.path.join(os.path.dirname(__file__).decode('mbcs'), 'data\\')
@@ -73,7 +72,7 @@ class AppModule(appModuleHandler.AppModule):
 	navGestures={}
 
 	def script_replaceApplications(self, gesture):
-		# This is necessary because the usage of the applications key  deselects all tracks.
+		# This is necessary because the usage of the applications key deselects all tracks.
 		KIGesture.fromName('shift+f10').send()
 
 	def __init__(self, *args, **kwargs):
@@ -102,44 +101,27 @@ class AppModule(appModuleHandler.AppModule):
 	def _inputCaptor(self, gesture):
 		global suppressStatus
 		if api.getFocusObject().windowControlID != 1003 or lastStatus=='Recording.' or gesture.isNVDAModifierKey or gesture.isModifier:
+		#if api.getForegroundObject().windowControlID != 68052 or lastStatus=='Recording.' or gesture.isNVDAModifierKey or gesture.isModifier:
 			return True
 		script = gesture.script
 		lookup=assignedShortcuts.get(gesture.displayName, None) 
 		if self._audacityInputHelp:
 			scriptName = scriptHandler.getScriptName(script) if script else ''
+			if scriptName == 'toggleAudacityInputHelp':
+				return True
 			if lookup:
 				queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[2]+'->'+lookup[0])
 			if scriptName and not lookup:
 				queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, scriptName)
-			if scriptName == 'toggleAudacityInputHelp':
-				return True
 		else:
 			# don't speak "Stopped" for preview commands
 			if lookup and lookup[0] in shouldNotReportStatus:
 				suppressStatus=True
 			else:
 				suppressStatus=False
-			if lookup and not  lookup[0] in shouldNotAutoSpeak:
+			if lookup and not lookup[0] in shouldNotAutoSpeak:
 				queueHandler.queueFunction(queueHandler.eventQueue, speech.speakMessage, lookup[0])
-			return not self._audacityInputHelp
-		# never comes here, only referencing original code
-		# but we don't want the keys to be spoken
-		textList = [gesture.displayName]
-		scriptName=''
-		script = gesture.script
-		if script:
-			scriptName = scriptHandler.getScriptName(script)
-			desc = script.__doc__
-			if desc:
-				textList.append(desc)
-		# Punctuation must be spoken for the gesture name (the first chunk) so that punctuation keys are spoken.
-		speech.speakText(textList[0], reason=controlTypes.REASON_MESSAGE, symbolLevel=characterProcessing.SYMLVL_ALL)
-		for text in textList[1:]:
-			speech.speakMessage(text)
-		if not self._audacityInputHelp or scriptName == 'toggleAudacityInputHelp':
-			return True
-		else:
-			return False
+		return not self._audacityInputHelp
 
 	def chooseNVDAObjectOverlayClasses(self, obj, clsList):
 		try:
@@ -187,7 +169,7 @@ class AppModule(appModuleHandler.AppModule):
 			obj.name='DropDown'
 		if obj.role==11 and '\\' in obj.name:
 			# rearrange the items in the recent files menu such
-			#            that the file name comes before the full qualified path.
+			# that the file name comes before the full qualified path.
 			obj.name='{2}, {0}{1}{2}'.format(*obj.name.rpartition('\\'))
 		# append percent to slider positions
 		if obj and obj.role==24 and obj.name==None and obj.previous and obj.previous.role==8:
@@ -226,7 +208,7 @@ class AppModule(appModuleHandler.AppModule):
 		if winHandle in toolBars:
 			return
 		else:
-			activeToolBars={tb.name.lstrip('Audacity ').rstrip('Toolbar') : tb for tb in obj.recursiveDescendants  if tb.role==controlTypes.ROLE_TOOLBAR}
+			activeToolBars={tb.name.lstrip('Audacity ').rstrip('Toolbar') : tb for tb in obj.recursiveDescendants if tb.role==controlTypes.ROLE_TOOLBAR}
 			if len(activeToolBars)>=13: 
 				toolBars[winHandle]=activeToolBars
 				return True
@@ -253,7 +235,7 @@ class AppModule(appModuleHandler.AppModule):
 		nextHandler()
 
 	def event_gainFocus(self, obj, nextHandler):
-		# Nyquist effects with an unspoken  unit and an unnamed slider 
+		# Nyquist effects with an unspoken unit and an unnamed slider 
 		if obj and obj.role==8 and obj.windowControlID in range(12000,13000) \
 			and obj.next and obj.next.role==24 and obj.next.name==None \
 			and obj.next.next and obj.previous.location[0]!=obj.next.next.location[0]:
@@ -322,7 +304,7 @@ class AppModule(appModuleHandler.AppModule):
 	def _mapAudacityKeys(self):
 		if len(menuFull)>0:
 			global assignedShortcuts
-			for obj  in menuFull:
+			for obj in menuFull:
 				#if '\x09' in obj.name:
 					cmd=obj.name.rpartition('\x09')
 					ncmd=self.replaceMulti(cmd[2], \
@@ -333,7 +315,7 @@ class AppModule(appModuleHandler.AppModule):
 						ncmd=KIGesture.fromName(ncmd)
 						if cmd[0] in canditatesStartTime or cmd[0] in canditatesEndTime or cmd[0] in canditatesLength:
 							self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd[0], [' ','(',')','/'], ['', '', '', ''])
-						assignedShortcuts[ncmd.displayName]=(cmd[0], obj, obj.parent.name)
+						assignedShortcuts[ncmd.displayName]=(cmd[0], obj, obj.simpleParent.name)
 					except KeyError:
 						pass
 
@@ -374,7 +356,7 @@ class AppModule(appModuleHandler.AppModule):
 		#if repeatCount==0:
 		rPeak=self.getToolBar('Recording Meter ').getChild(1).name.partition('Peak')[2] 
 		ui.message(rPeak)
-	script_announceRecordingPeak.__doc__=_('Reports the current recording  level.')
+	script_announceRecordingPeak.__doc__=_('Reports the current recording level.')
 	script_announceRecordingPeak.category=SCRCAT_AUDACITY
 
 	def script_announceTempo(self,gesture):
@@ -393,7 +375,7 @@ class AppModule(appModuleHandler.AppModule):
 				if tempo>self.__tempi[i] and tempo<=self.__tempi[i+2]:
 					text=self.__tempi[i+1]
 			ui.message(text)
-	script_announceTempo.__doc__=_('''Reports the  tempo in beats per minute for the last  tapping along.
+	script_announceTempo.__doc__=_('''Reports the tempo in beats per minute for the last tapping along.
 	Replaces the selection in an edit box if pressed once.
 	Pressed twice, the tempo is given as classical description.''')
 	script_announceTempo.category=SCRCAT_AUDACITY
@@ -417,7 +399,7 @@ class AppModule(appModuleHandler.AppModule):
 					self.deltaTime.remove(self.tapMedian-outlayer)
 			self.tapMedian=old_div(sum(self.deltaTime),len(self.deltaTime))
 			self.tapCounter=(self.tapCounter+1)%4
-	script_tempoTapping.__doc__=_('use this key  to tap along for some measures. The found tempo can be read out by the announce temp shortcut (normally NVDA+pause).')
+	script_tempoTapping.__doc__=_('use this key to tap along for some measures. The found tempo can be read out by the announce temp shortcut (normally NVDA+pause).')
 	script_tempoTapping.category=SCRCAT_AUDACITY
 
 	def script_reportColumn(self,gesture):
@@ -446,12 +428,15 @@ class AppModule(appModuleHandler.AppModule):
 	def script_toggleAudacityInputHelp(self,gesture):
 		if not lastStatus in ['Playing Paused.', 'Recording Paused.', 'Stopped.']:
 			return
+		elif api.getFocusObject().windowControlID != 1003:
+			ui.message("Input Help is only available in the Track View")
+			return
 		self._audacityInputHelp=not self._audacityInputHelp
 		stateOn = 'Audacity input help on'
 		stateOff = 'Audacity input help off'
 		state = stateOn if self._audacityInputHelp else stateOff
 		ui.message(state)
-	script_toggleAudacityInputHelp.__doc__=_('Audacity Turns input help on or off. When on, any input such as pressing a key on the keyboard will tell you what script is associated with that input, if any.')
+	script_toggleAudacityInputHelp.__doc__=_('Turns Audacity input help on or off. When on, any input such as pressing a key on the keyboard will tell you what command  is associated with that input, if any')
 	script_toggleAudacityInputHelp.category=SCRCAT_AUDACITY
 
 	def getTime(self,child):
@@ -532,7 +517,7 @@ class SelectionControls (NVDAObjects.IAccessible.IAccessible):
 
 
 class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
-	#  prevent the roles table and row (= trackpanel and audio track) from being spoken 
+	# prevent the roles table and row (= trackpanel and audio track) from being spoken 
 	controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLEROW)
 	controlTypes.silentValuesForRoles.add(controlTypes.ROLE_TABLEROW)
 	controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLE)
@@ -604,7 +589,7 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 			ui.message(audioPosition)
 		elif repeatCount==1:
 			speech.speakSpelling(audioPosition)
-	script_announceAudioPosition.__doc__=_('Reports the audio  position, both during    Playback and while in stop mode.')
+	script_announceAudioPosition.__doc__=_('Reports the audio position, both during Playback and while in stop mode.')
 	script_announceAudioPosition.category=SCRCAT_AUDACITY
 
 	def script_announceStart(self, gesture):
@@ -638,7 +623,7 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 			selTracks=['Muted ']
 			selChoice='Mute On'
 		elif repeatCount==2:
-			selTracks=['Soloed  ']
+			selTracks=['Soloed ']
 			selChoice='Solo On'
 		for track in self.parent.children:
 			#if controlTypes.STATE_SELECTED in track.states:
@@ -653,7 +638,7 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 		else:
 			selTracks[0]+='is: ' if len(selTracks)==2 else ' are:'
 			ui.message(', '.join(selTracks)) 
-	script_reportSelectedTracks.__doc__=_('Reports  the currently selected tracks, if any. Reports muted tracks if pressed twice or soloed tracks if pressed three times.')
+	script_reportSelectedTracks.__doc__=_('Reports the currently selected tracks, if any. Reports muted tracks if pressed twice or soloed tracks if pressed three times.')
 	script_reportSelectedTracks.category=SCRCAT_AUDACITY
 
 	def script_pageUpByThree(self, gesture):
@@ -677,41 +662,53 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 	def script_reduceLeft(self, gesture):
 		KIGesture.fromName('Control+Shift+RightArrow').send()
 		KIGesture.fromName('Shift+F6').send()
-	script_reduceLeft.__doc__=_('Contracts the selection at the left boundary  and plays a preview.')
+	script_reduceLeft.__doc__=_('Contracts the selection at the left boundary and plays a preview.')
 	script_reduceLeft.category=SCRCAT_AUDACITY
 
 	def script_expandRight(self, gesture):
 		KIGesture.fromName('Shift+RightArrow').send()
 		KIGesture.fromName('Shift+F8').send()
-	script_expandRight.__doc__=_('Expands the selection at the right boundary  and plays a preview.')
+	script_expandRight.__doc__=_('Expands the selection at the right boundary and plays a preview.')
 	script_expandRight.category=SCRCAT_AUDACITY
 
 	def script_reduceRight(self, gesture):
 		KIGesture.fromName('Control+Shift+LeftArrow').send()
 		KIGesture.fromName('Shift+F8').send()
-	script_reduceRight.__doc__=_('Contracts the selection at the right boundary  and plays a preview.')
+	script_reduceRight.__doc__=_('Contracts the selection at the right boundary and plays a preview.')
 	script_reduceRight.category=SCRCAT_AUDACITY
 
 	def autoTime(self, gesture, which=0):
-		gesture.send()
+		def pick(control):
+			oldTimes={x:self.getTime(self._getByVersion(x)) for x in ['start','end','center','length']}
+			gesture.send()
+			newTimes={x:self.getTime(self._getByVersion(x)) for x in ['start','end','center','length']}
+			if newTimes == oldTimes:
+				winsound.MessageBeep()
+			else:
+				newTimes['audio']=self.getTime(self._getByVersion('audio'))
+				message= newTimes[control]+' selected' if control=='length' else newTimes[control]
+				queueHandler.queueFunction(queueHandler.eventQueue, ui.message, message)
+		# Do nothing during recording
 		if lastStatus=='Recording.':
-			return
+			gesture.send()
 		elif lastStatus=='Playing.':
+			gesture.send()
 			if which in [2,4]:
 				queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_start.wav')
 			elif which in [3,5]:
 				queueHandler.queueFunction(queueHandler.eventQueue, playWaveFile, dataPath+'selection_end.wav')
+			else:
+				return
 		elif lastStatus in ['Stopped.', 'Playing Paused.', 'blank', None]:
 			if which in [0,2]:
-				ui.message(self.getTime(self._getByVersion('audio')))
+				pick('audio')
 			elif which in [4,5]:
-				ui.message(self.getTime(self._getByVersion('length'))+' Selected')
+				pick('length')
 			elif which in [1,3]:
 				if 'Paused' in lastStatus:
-					ui.message(self.getTime(self._getByVersion('audio')))
+					pick('audio')
 				else:
-					ui.message(self.getTime(self._getByVersion('end')))
-					pass
+					pick('end')
 
 	# commands that should speak the new selection length
 	def script_SelectiontoStart(self, gesture):
@@ -807,7 +804,7 @@ class labelTrack(Track):
 	def initOverlayClass(self):
 		self.isFocusable=True
 		#if '><' in self.name:
-		#    self.editMode=2g
+		# self.editMode=2g
 
 	def event_gainFocus(self):
 		super(labelTrack,self).event_gainFocus()
