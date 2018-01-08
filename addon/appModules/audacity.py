@@ -6,19 +6,16 @@ import os
 import sys
 impPath = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(impPath)
-from builtins import zip
-from builtins import str
-from builtins import range
-#from past.utils import old_div
+from builtins import zip, str, range
 del sys.path[-1]
 import appModuleHandler
 from appModules import __path__ as paths
 from .appVars import *
 import api
 import ui
-import winUser
 import characterProcessing
 import controlTypes
+from comtypes import client
 import IAccessibleHandler
 import eventHandler
 import queueHandler
@@ -150,7 +147,7 @@ class AppModule(appModuleHandler.AppModule):
 			obj.isFocusable=False
 		# avoid the ampersand in dialogs
 		if obj.windowClassName=='Button' and not obj.role in [controlTypes.ROLE_MENUBAR, controlTypes.ROLE_MENUITEM, controlTypes.ROLE_POPUPMENU]:
-			obj.name = winUser.getWindowText(obj.windowHandle).replace('&','')
+			obj.name = api.winUser.getWindowText(obj.windowHandle).replace('&','')
 		# define the toolbars as real Toolbars
 		# such that the name is spoken automatically on focus entered.
 		if obj.role==controlTypes.ROLE_PANE and obj.name and (obj.name.startswith('Audacity ') and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR or obj.name=='Timeline'):
@@ -282,6 +279,10 @@ class AppModule(appModuleHandler.AppModule):
 		if name in ['Recording.','Playing.','Stopped.','Playing Paused.', 'Recording Paused.']:
 			lastStatus=name
 		nextHandler()
+	def script_systemMixer(self,gesture):
+		client.CreateObject("WScript.Shell").Run('sndvol')
+	script_systemMixer.__doc__=_('Opens the System Volume Mixer, same as rightclicking on the speaker icon in the tray')
+	script_systemMixer.category=SCRCAT_AUDACITY
 
 	def script_states(self,gesture):
 		ui.browseableMessage(''.join((x+'\n' for x in toolBars.get(api.getForegroundObject().windowHandle).keys())),'')
@@ -416,12 +417,12 @@ class AppModule(appModuleHandler.AppModule):
 	script_reportColumn.category=SCRCAT_AUDACITY
 
 	def script_wheelForward(self, gesture):
-		winUser.mouse_event(MOUSEEVENTF_WHEEL,0,0,120,None)
+		api.winUser.mouse_event(MOUSEEVENTF_WHEEL,0,0,120,None)
 	script_wheelForward.__doc__=_('Simulates a turn of the Mouse wheel forward.')
 	script_wheelForward.category=SCRCAT_AUDACITY
 
 	def script_wheelBack(self, gesture):
-		winUser.mouse_event(MOUSEEVENTF_WHEEL,0,0,-120,None)
+		api.winUser.mouse_event(MOUSEEVENTF_WHEEL,0,0,-120,None)
 	script_wheelBack.__doc__=_('Simulates a turn of the Mouse wheel back.')
 	script_wheelBack.category=SCRCAT_AUDACITY
 
@@ -482,6 +483,7 @@ class AppModule(appModuleHandler.AppModule):
 		'kb:F10':'announceRecordingPeak',
 		'kb:Nvda+PageDown':'wheelBack',
 		'kb:Nvda+pageUp':'wheelForward',
+		'kb:Nvda+x':'systemMixer',
 	}
 
 	__tempi= [
