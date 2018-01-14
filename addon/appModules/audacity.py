@@ -35,7 +35,7 @@ from nvwave import playWaveFile
 # import screenBitmap
 # import ctypes
 # import treeInterceptorHandler
-# import wx
+from wx import CallLater
 import winsound
 SCRCAT_AUDACITY = _('Audacity')
 MOUSEEVENTF_WHEEL=0x0800
@@ -67,6 +67,7 @@ class AppModule(appModuleHandler.AppModule):
 	tapCounter=0
 	tapMedian=200.0
 	navGestures={}
+	outBox=CallLater(1, ui.message, None)
 
 	def script_replaceApplications(self, gesture):
 		# This is necessary because the usage of the applications key deselects all tracks.
@@ -89,7 +90,6 @@ class AppModule(appModuleHandler.AppModule):
 		controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_PANE)
 		self.bindGesture('kb:applications', 'replaceApplications')
 		inputCore.manager._captureFunc = self._inputCaptor
-		
 
 	def event_appModule_loseFocus(self):
 		inputCore.manager._captureFunc = None
@@ -221,7 +221,7 @@ class AppModule(appModuleHandler.AppModule):
 		wh=obj.windowHandle
 		if wh in toolBars:
 			return toolBars[wh].get(key)
-		elif obj.windowClasName=='wxWindowNR':
+		elif obj.windowClassName=='wxWindowNR':
 			self._update_Toolbars()
 			return toolBars[wh].get(key)
 
@@ -293,6 +293,7 @@ class AppModule(appModuleHandler.AppModule):
 	def getMenuTree(self, obj):
 		global menuFull
 		menuFull+=[x for x in obj.recursiveDescendants if x and x.role == 11]
+		tones.beep(500,20)
 
 	def script_guide(self, gesture):
 		with open(dataPath+'Audacity 2.2.0 Guide.htm','r') as guide:
@@ -681,15 +682,23 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 
 	def autoTime(self, gesture, which=0):
 		def pick(control):
-			oldTimes={x:self.getTime(self._getByVersion(x)) for x in ['start','end','center','length']}
+			repeatCount=scriptHandler.getLastScriptRepeatCount()
+			oldTimes={x:self.getTime(self._getByVersion(x)) for x in {control, 'start', 'end', 'length'}}
 			gesture.send()
-			newTimes={x:self.getTime(self._getByVersion(x)) for x in ['start','end','center','length']}
+			newTimes={x:self.getTime(self._getByVersion(x)) for x in {control, 'start', 'end', 'length'}}
 			if newTimes == oldTimes:
 				winsound.MessageBeep()
 			else:
 				newTimes['audio']=self.getTime(self._getByVersion('audio'))
 				message= newTimes[control]+' selected' if control=='length' else newTimes[control]
-				queueHandler.queueFunction(queueHandler.eventQueue, ui.message, message)
+				if repeatCount==0:
+					if self.outBox and self.outBox.running:
+						for pending in self.outBox._CallLater__RUNNING-set((self.outBox,)):
+							pending.Stop() 
+					else:
+						ui.message(message)
+				else:
+					self.outBox.Restart(60, message)
 		# Do nothing during recording
 		if lastStatus=='Recording.':
 			gesture.send()
