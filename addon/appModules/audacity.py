@@ -66,6 +66,7 @@ class AppModule(appModuleHandler.AppModule):
 	deltaTime=[]
 	tapCounter=0
 	tapMedian=200.0
+	
 	navGestures={}
 	outBox=CallLater(1, ui.message, None)
 
@@ -132,7 +133,7 @@ class AppModule(appModuleHandler.AppModule):
 		#if (windowControlID in [2723]):
 			#clsList.insert(0, SelectionControls)
 		# Somewhat outdated
-		if (windowText=='Track Panel' and windowControlID==1003 and childID>=0):
+		if (windowText=='Track Panel' and windowControlID==1003 and childID>0):
 			clsList.insert(0, Track)
 			try:
 				if name.endswith(' Label Track'):
@@ -293,7 +294,6 @@ class AppModule(appModuleHandler.AppModule):
 	def getMenuTree(self, obj):
 		global menuFull
 		menuFull+=[x for x in obj.recursiveDescendants if x and x.role == 11]
-		tones.beep(500,20)
 
 	def script_guide(self, gesture):
 		with open(dataPath+'Audacity 2.2.0 Guide.htm','r') as guide:
@@ -366,12 +366,12 @@ class AppModule(appModuleHandler.AppModule):
 		obj=api.getFocusObject()
 		if repeatCount==0:
 			if obj.role==controlTypes.ROLE_EDITABLETEXT:
-				text=str(round(old_div(60,self.tapMedian),1))
+				text=str(round(60.0/self.tapMedian,1))
 				self._paste_safe(text, obj)
 			else:
-				ui.message(str(round(old_div(60,self.tapMedian),1))+' bpm')
+				ui.message(str(round(60.0/self.tapMedian,1))+' bpm')
 		elif repeatCount==1:
-			tempo=(old_div(60,self.tapMedian))
+			tempo=(60.0/self.tapMedian)
 			text='Tempo not in classical range'
 			for i in range(0, len(self.__tempi)-2,2):
 				if tempo>self.__tempi[i] and tempo<=self.__tempi[i+2]:
@@ -399,7 +399,7 @@ class AppModule(appModuleHandler.AppModule):
 					self.deltaTime.remove(self.tapMedian+outlayer)
 				except:
 					self.deltaTime.remove(self.tapMedian-outlayer)
-			self.tapMedian=old_div(sum(self.deltaTime),len(self.deltaTime))
+			self.tapMedian=sum(self.deltaTime)/len(self.deltaTime)
 			self.tapCounter=(self.tapCounter+1)%4
 	script_tempoTapping.__doc__=_('use this key to tap along for some measures. The found tempo can be read out by the announce temp shortcut (normally NVDA+pause).')
 	script_tempoTapping.category=SCRCAT_AUDACITY
