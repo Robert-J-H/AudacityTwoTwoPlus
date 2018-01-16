@@ -27,7 +27,7 @@ such as automatic and manual time announcement, shortcut help and  integration o
 	# Author(s)
 	"addon_author" : u"Robert Hänggi <aarjay.robert@gmail.com>",
 	# URL for the add-on documentation support
-	"addon_url" : None,
+	"addon_url" : "https://github.com/Robert-J-H/AudacityTwoTwoPlus",
 	# Documentation file name
 	"addon_docFileName" : "help.html",
 }
