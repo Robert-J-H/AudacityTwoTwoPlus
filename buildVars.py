@@ -29,7 +29,7 @@ such as automatic and manual time announcement, shortcut help and  integration o
 	# URL for the add-on documentation support
 	"addon_url" : None,
 	# Documentation file name
-	"addon_docFileName" : "readme.txt",
+	"addon_docFileName" : "help.html",
 }
 
 

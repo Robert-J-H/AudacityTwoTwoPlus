@@ -25,7 +25,7 @@ def md2html(source, dest):
 		mdText = f.read()
 		for k, v in headerDic.iteritems():
 			mdText = mdText.replace(k, v, 1)
-		htmlText = markdown.markdown(mdText)
+		htmlText = markdown.markdown(mdText, extensions=['extra','toc'])
 	with codecs.open(dest, "w", "utf-8") as f:
 		f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
 			"<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\"\n" +
@@ -86,9 +86,9 @@ def createAddonHelp(dir):
 		cssPath = os.path.join(docsDir, "style.css")
 		cssTarget = env.Command(cssPath, "style.css", Copy("$TARGET", "$SOURCE"))
 		env.Depends(addon, cssTarget)
-	if os.path.isfile("readme.md"):
-		readmePath = os.path.join(docsDir, "en", "readme.md")
-		readmeTarget = env.Command(readmePath, "readme.md", Copy("$TARGET", "$SOURCE"))
+	if os.path.isfile("help.md"):
+		readmePath = os.path.join(docsDir, "en", "help.md")
+		readmeTarget = env.Command(readmePath, "help.md", Copy("$TARGET", "$SOURCE"))
 		env.Depends(addon, readmeTarget)
 
 
