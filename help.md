@@ -1,4 +1,5 @@
 # NVDA Addon For the Multi-Track Editor Audacity #
+[Jump to Full Help](#full_help)
 
 Best compatible  with  version 2.2.2, restricted functionality for earlier versions (2.1.3+).
 
@@ -22,15 +23,16 @@ Best compatible  with  version 2.2.2, restricted functionality for earlier versi
 
 ----
 
-## Full Help
+## <a id="full_help"> </a> Full Help
 
 ### Table of Default Keyboard Shortcuts
-The shortcuts are mainly available in the Track View, exceptions are indicated
-(Navigateable  with table commands, such as Control+Alt+Arrows)
+The input gestures  are mainly available in the Track View, exceptions are indicated
+
+(The following table is navigateable  with NVDA commands such as Control+Alt+Arrows)
 
 Shortcut | Description | Remarks 
 ----|----|----
-NVDA+H | Shows this  Help | You can use browser navigation keys (e.g. h or t) and also NVDA+Control+F to search something. Press escape to close the window. 
+NVDA+H | Shows this  Help | You can use browser navigation keys (e.g. h or t) and also NVDA+Control+F to look for  something specific. Escape closes the Window. 
 NVDA+G | Shows the famous JAWS Guide by David Bailes | Despite its name, the guide is essentially valid for all Screen Readers. Same keys useable as for the Help dialog.  
 NVDA+A | Reports the current Audio Position | The format is the same as the one in  the Selection toolbar. Also true for other time commands. 
 NVDA+J | Reports the current Start Time | Always available, regardless of the visibility settings in the Selection Toolbar

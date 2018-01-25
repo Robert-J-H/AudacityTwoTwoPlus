@@ -10,18 +10,16 @@ from builtins import zip, str, range
 del sys.path[-1]
 import appModuleHandler
 from appModules import __path__ as paths
+import addonHandler
 from .appVars import *
 import api
 import ui
-import characterProcessing
 import controlTypes
 from comtypes import client
 import IAccessibleHandler
-import eventHandler
 import queueHandler
 import gui
 import inputCore
-import keyboardHandler
 from keyboardHandler import KeyboardInputGesture as KIGesture
 import NVDAObjects.IAccessible
 import speech
@@ -45,6 +43,7 @@ assignedShortcuts={}
 toolBars={}
 lastStatus='Stopped.'
 suppressStatus=False
+objCounter=0
 
 def firstNum(string):
 	for i, c in enumerate(string):
@@ -66,17 +65,13 @@ class AppModule(appModuleHandler.AppModule):
 	deltaTime=[]
 	tapCounter=0
 	tapMedian=200.0
-	
 	navGestures={}
 	outBox=CallLater(1, ui.message, None)
 
-	def script_replaceApplications(self, gesture):
-		# This is necessary because the usage of the applications key deselects all tracks.
-		KIGesture.fromName('shift+f10').send()
-
 	def __init__(self, *args, **kwargs):
-		self._audacityInputHelp=False
 		super(AppModule, self).__init__(*args, **kwargs)
+		self._audacityInputHelp=False
+		self.helpPath=addonHandler.getCodeAddon().getDocFilePath()
 
 	def _getByVersion(self, control):
 		if int(''.join(x for x in self.productVersion[:-1] if x.isdigit()))>=220:
@@ -102,7 +97,7 @@ class AppModule(appModuleHandler.AppModule):
 		#if api.getForegroundObject().windowControlID != 68052 or lastStatus=='Recording.' or gesture.isNVDAModifierKey or gesture.isModifier:
 			return True
 		script = gesture.script
-		lookup=assignedShortcuts.get(gesture.displayName, None) 
+		lookup=assignedShortcuts.get(gesture.normalizedIdentifiers[1], None) 
 		if self._audacityInputHelp:
 			scriptName = scriptHandler.getScriptName(script) if script else ''
 			if scriptName == 'toggleAudacityInputHelp':
@@ -133,7 +128,7 @@ class AppModule(appModuleHandler.AppModule):
 		#if (windowControlID in [2723]):
 			#clsList.insert(0, SelectionControls)
 		# Somewhat outdated
-		if (windowText=='Track Panel' and windowControlID==1003 and childID>0):
+		if (windowText=='Track Panel' and windowControlID==1003 and childID>=0):
 			clsList.insert(0, Track)
 			try:
 				if name.endswith(' Label Track'):
@@ -151,7 +146,7 @@ class AppModule(appModuleHandler.AppModule):
 			obj.name = api.winUser.getWindowText(obj.windowHandle).replace('&','')
 		# define the toolbars as real Toolbars
 		# such that the name is spoken automatically on focus entered.
-		if obj.role==controlTypes.ROLE_PANE and obj.name and (obj.name.startswith('Audacity ') and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR or obj.name=='Timeline'):
+		if obj.role==controlTypes.ROLE_PANE and obj.name and ('audacity' in obj.name.lower()) and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR: #or obj.name=='Timeline'):
 			obj.role=controlTypes.ROLE_TOOLBAR
 			obj.name=obj.name.lstrip('Audacity ').rstrip('Toolbar')
 		# groupings for controls in e.g. preferences
@@ -178,16 +173,49 @@ class AppModule(appModuleHandler.AppModule):
 			item=str(item).replace(old.pop(0), new.pop(0))
 		return item
 
+	def _mapAudacityKeys(self, obj, parentName):
+		cmd, _, shortcut=obj.name.partition('\x09')
+		if bool(shortcut):
+			shortcut=self.replaceMulti(shortcut, \
+				[' ', 'Ctrl', 'Left', 'Right', 'Up', 'Down', 'Pageuparrow', 'Pagedownarrow', 'Return'], \
+				['', 'control','leftarrow','rightarrow', 'uparrow', 'downarrow', 'pageup', 'pagedown', 'enter']).lower()
+			ncmd=KIGesture.fromName(shortcut)
+			if cmd in canditatesStartTime + canditatesEndTime + canditatesLength:
+				self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd, [' ','(',')','/'], ['', '', '', ''])
+			assignedShortcuts[ncmd.normalizedIdentifiers[1]]=(cmd, obj, parentName)
+
 	def _get_Menus(self, obj):
-		global menuFull
-		if len(menuFull)==0 and obj.previous and obj.previous.role==controlTypes.ROLE_MENUBAR:
+		if len(assignedShortcuts)==0 and obj.previous and obj.previous.role==controlTypes.ROLE_MENUBAR:
 			menus=obj.previous.children
 			# 9 menus for V2.1.3 and 10(+2) for V2.2.0
 			if len(menus) >=9:
 				signet=dataPath+'signet.wav'
 				playWaveFile(signet)
-				for i in range(len(menus)):
-					queueHandler.queueFunction(queueHandler.eventQueue,self.getMenuTree,menus[i])
+				for menu in menus:
+					queueHandler.queueFunction(queueHandler.eventQueue,self._get_menuItem,menu)
+			return True
+
+	# Sadly, recursion sucks in this context
+	def _get_menuItem(self, obj):
+		parentName=obj.name
+		if obj.role==11:
+			menuFull.append(obj)
+			self._mapAudacityKeys(obj, parentName)
+		if obj.firstChild:
+			for level1 in obj.firstChild.children:
+				if level1.role==11:
+					menuFull.append( level1)
+					self._mapAudacityKeys(level1, obj.name)
+				if level1.firstChild:
+					for level2 in level1.firstChild.children:
+						if level2.role==11:
+							menuFull.append(level2)
+							self._mapAudacityKeys(level2, level1.name)
+						if level2.firstChild:
+							for level3 in level2.firstChild.children:
+								if level3.role==11:
+									menuFull.append(level3)
+									self._mapAudacityKeys(level3, level2.name)
 
 	def _update_Toolbars(self,callback=0):
 		global toolBars
@@ -197,17 +225,15 @@ class AppModule(appModuleHandler.AppModule):
 				obj=api.getFocusAncestors()[2]
 			except:
 				obj=api.getFocusObject().parent.parent.parent
-			finally:
-				return
 		if not obj:
 			return
 		winHandle=obj.windowHandle
 		winClass=obj.windowClassName
 		if winHandle in toolBars:
-			return
+			return True
 		else:
 			activeToolBars={tb.name.lstrip('Audacity ').rstrip('Toolbar') : tb for tb in obj.recursiveDescendants if tb.role==controlTypes.ROLE_TOOLBAR}
-			if len(activeToolBars)>=13: 
+			if bool(len(activeToolBars)):
 				toolBars[winHandle]=activeToolBars
 				return True
 			elif callback!=1:
@@ -222,14 +248,12 @@ class AppModule(appModuleHandler.AppModule):
 		wh=obj.windowHandle
 		if wh in toolBars:
 			return toolBars[wh].get(key)
-		elif obj.windowClassName=='wxWindowNR':
-			self._update_Toolbars()
+		elif obj.windowClassName=='wxWindowNR' and self._update_Toolbars():
 			return toolBars[wh].get(key)
 
 	def event_foreground(self, obj, nextHandler):
 		speech.cancelSpeech()
 		self._get_Menus(obj)
-		queueHandler.queueFunction(queueHandler.eventQueue,self._mapAudacityKeys)
 		nextHandler()
 
 	def event_gainFocus(self, obj, nextHandler):
@@ -259,8 +283,6 @@ class AppModule(appModuleHandler.AppModule):
 
 	def event_valueChange(self, obj, nextHandler):
 		if obj and obj.hasFocus and obj.role==24 and obj.name==None and obj.previous and obj.previous.role==8:
-			#if eventHandler.isPendingEvents('valueChange',self):
-			tones.beep(3000,20,0,20)
 			try:
 				# A bug in the Nyquist sliders, there's always a zero appended 
 				val=obj.previous.value.rstrip('0')
@@ -280,10 +302,15 @@ class AppModule(appModuleHandler.AppModule):
 		if name in ['Recording.','Playing.','Stopped.','Playing Paused.', 'Recording Paused.']:
 			lastStatus=name
 		nextHandler()
+
 	def script_systemMixer(self,gesture):
 		client.CreateObject("WScript.Shell").Run('sndvol')
 	script_systemMixer.__doc__=_('Opens the System Volume Mixer, same as rightclicking on the speaker icon in the tray')
 	script_systemMixer.category=SCRCAT_AUDACITY
+
+	def script_replaceApplications(self, gesture):
+		# This is necessary because the usage of the applications key deselects all tracks.
+		KIGesture.fromName('shift+f10').send()
 
 	def script_states(self,gesture):
 		ui.browseableMessage(''.join((x+'\n' for x in toolBars.get(api.getForegroundObject().windowHandle).keys())),'')
@@ -291,9 +318,15 @@ class AppModule(appModuleHandler.AppModule):
 	script_states.__doc__=_('Reports all tool bars that are currently docked.')
 	script_states.category=SCRCAT_AUDACITY
 
-	def getMenuTree(self, obj):
-		global menuFull
-		menuFull+=[x for x in obj.recursiveDescendants if x and x.role == 11]
+	def script_help(self, gesture):
+		import re
+		with open(self.helpPath,'r') as helpFile:
+			help_html=helpFile.read()
+			speech.cancelSpeech
+			help_html=''.join(re.match('(.*<body>)(.*<hr />)(.*)',help_html,flags=re.DOTALL).groups()[::2])
+			ui.browseableMessage(help_html,'Help',True)
+	script_help.__doc__=_('Shows the accompanying help for the Audacity addon')
+	script_help.category=SCRCAT_AUDACITY
 
 	def script_guide(self, gesture):
 		with open(dataPath+'Audacity 2.2.0 Guide.htm','r') as guide:
@@ -302,24 +335,6 @@ class AppModule(appModuleHandler.AppModule):
 			ui.browseableMessage(guide,'Guide',True)
 	script_guide.__doc__=_('Shows the famous JAWS Guide for Audacity as browseable document. All quick navigation keys allowed including find dialog and elements list.')
 	script_guide.category=SCRCAT_AUDACITY
-
-	def _mapAudacityKeys(self):
-		if len(menuFull)>0:
-			global assignedShortcuts
-			for obj in menuFull:
-				#if '\x09' in obj.name:
-					cmd=obj.name.rpartition('\x09')
-					ncmd=self.replaceMulti(cmd[2], \
-						[' ', 'Ctrl', 'Left', 'Right', 'Up', 'Down', 'Pageuparrow', 'Pagedownarrow', 'Return'], \
-						['', 'control','leftarrow','rightarrow', 'uparrow', 'downarrow', 'pageup', 'pagedown', 'enter']) 
-					ncmd=ncmd.lower()
-					try:
-						ncmd=KIGesture.fromName(ncmd)
-						if cmd[0] in canditatesStartTime or cmd[0] in canditatesEndTime or cmd[0] in canditatesLength:
-							self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd[0], [' ','(',')','/'], ['', '', '', ''])
-						assignedShortcuts[ncmd.displayName]=(cmd[0], obj, obj.simpleParent.name)
-					except KeyError:
-						pass
 
 	def script_info(self,gesture):
 		#ui.message(str(getPipeFile()['Channels']))
@@ -478,6 +493,7 @@ class AppModule(appModuleHandler.AppModule):
 		'kb:nvda+pause':'announceTempo',
 		'kb:nvda+i':'reportColumn',
 		'kb:nvda+g':'guide',
+		'kb:nvda+h':'help',
 		'kb:F8':'states',
 		'kb:control+f8':'info',
 		'kb:F9':'announcePlaybackPeak',
@@ -518,32 +534,31 @@ class SelectionControls (NVDAObjects.IAccessible.IAccessible):
 		'kb:shift+downArrow':'changeAndPreview',
 	}
 
-
 class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 	# prevent the roles table and row (= trackpanel and audio track) from being spoken 
 	controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLEROW)
 	controlTypes.silentValuesForRoles.add(controlTypes.ROLE_TABLEROW)
 	controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLE)
 	shouldAllowIAccessibleFocusEvent=True
-	appName='Audacity'
-
-	def __init__(self, *args, **kwargs):
-		tones.beep(1000,40)
-		super(Track, self).__init__(*args, **kwargs)
-		tones.beep(4000,40)
-		self.appName=self.appModule.appName
 
 	def initOverlayClass(self):
-		#tones.beep(1000,40)
-		pass
+		self.appName=self.appModuleName
+
+	def _get_next(self):
+			totalGroup,posGroup=self.positionInfo.values()
+			if 0<posGroup<totalGroup:
+				return self.parent.children[posGroup]
+
+	def _get_previous(self):
+			totalGroup,posGroup=self.positionInfo.values()
+			if 1<posGroup<=totalGroup:
+				return self.parent.children[posGroup-2]
 
 	def event_gainFocus(self):
-		self._update_Toolbars()
-		#if self.parent.childCount !=1:
 		super(Track,self).event_gainFocus()
-		if len(self.navGestures)==0:
-			self._mapAudacityKeys
-		self.bindGestures(self.navGestures)
+		if self.IAccessibleChildID>=0:
+			self._update_Toolbars()
+			self.bindGestures(self.navGestures)
 
 	def transportAction(self,button,action=None):
 		target=self.transportToolBar(button)
