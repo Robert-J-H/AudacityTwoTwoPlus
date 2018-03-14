@@ -2,8 +2,7 @@
 from __future__ import absolute_import, division, unicode_literals
 # Audacity App Module for NVDA
 # Copyright (c) 2017 Robert Hänggi and NVDA Access
-import os
-import sys
+import os, sys, api, ui, gui, re, speech, time, tones
 impPath = os.path.abspath(os.path.dirname(__file__))
 sys.path.append(impPath)
 from builtins import zip, str, range
@@ -12,28 +11,19 @@ import appModuleHandler
 from appModules import __path__ as paths
 import addonHandler
 from .appVars import *
-import api
-import ui
 import controlTypes
 from comtypes import client
 import IAccessibleHandler
 import queueHandler
-import gui
 import inputCore
 from keyboardHandler import KeyboardInputGesture as KIGesture
 import NVDAObjects.IAccessible
-import speech
 import scriptHandler
 import textInfos
-import time
-import tones
 from logHandler import log
 from nvwave import playWaveFile
-# import review
-# import screenBitmap
-# import ctypes
-# import treeInterceptorHandler
 from wx import CallLater
+from NVDAObjects.window import LiveText, DisplayModelLiveText
 import winsound
 SCRCAT_AUDACITY = _('Audacity')
 MOUSEEVENTF_WHEEL=0x0800
@@ -72,6 +62,7 @@ class AppModule(appModuleHandler.AppModule):
 		super(AppModule, self).__init__(*args, **kwargs)
 		self._audacityInputHelp=False
 		self.helpPath=addonHandler.getCodeAddon().getDocFilePath()
+		self.seenHandles=set()
 
 	def _getByVersion(self, control):
 		if int(''.join(x for x in self.productVersion[:-1] if x.isdigit()))>=220:
@@ -127,30 +118,34 @@ class AppModule(appModuleHandler.AppModule):
 			return
 		#if (windowControlID in [2723]):
 			#clsList.insert(0, SelectionControls)
-		# Somewhat outdated
 		if (windowText=='Track Panel' and windowControlID==1003 and childID>=0):
-			clsList.insert(0, Track)
-			try:
-				if name.endswith(' Label Track'):
-					clsList.insert(0, labelTrack)
-				return
-			except:
-				KIGesture.fromName('downArrow').send()
+				if ' Label Track' in name:
+					clsList.insert(0, LabelTrack)
+				else:
+					clsList.insert(0, Track)
 
 	def event_NVDAObject_init(self,obj):
+		handle=obj.windowHandle
+		if handle in self.seenHandles:
+			pass
 		if obj.windowClassName=='#32770' and obj.role==controlTypes.ROLE_PANE:
 			#obj.role=controlTypes.ROLE_DIALOG
 			obj.isFocusable=False
 		# avoid the ampersand in dialogs
 		if obj.windowClassName=='Button' and not obj.role in [controlTypes.ROLE_MENUBAR, controlTypes.ROLE_MENUITEM, controlTypes.ROLE_POPUPMENU]:
 			obj.name = api.winUser.getWindowText(obj.windowHandle).replace('&','')
-		# define the toolbars as real Toolbars
+		# define the toolbars as real toolbars
 		# such that the name is spoken automatically on focus entered.
-		if obj.role==controlTypes.ROLE_PANE and obj.name and ('audacity' in obj.name.lower()) and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR: #or obj.name=='Timeline'):
-			obj.role=controlTypes.ROLE_TOOLBAR
-			obj.name=obj.name.lstrip('Audacity ').rstrip('Toolbar')
+		if obj.role==controlTypes.ROLE_PANE and obj.name: 
+			if 		('audacity' in obj.name.lower()) and obj.firstChild.role!= controlTypes.ROLE_STATUSBAR:
+				obj.role=controlTypes.ROLE_TOOLBAR
+				obj.name=obj.name.lstrip('Audacity ').rstrip('Toolbar')
+			elif obj.name=='Timeline':
+				obj.role=controlTypes.ROLE_RULER
 		# groupings for controls in e.g. preferences
-		if obj and obj.role in [5, 6, 8, 9, 13, 24, 36]:
+		if obj  and obj.role in [5, 6, 8, 9, 13, 24, 36] \
+			and not obj.windowHandle in self.seenHandles \
+			and obj.container and not obj.container.role==controlTypes.ROLE_GROUPING:
 			# Code snippet by David
 			# work around for reading group boxes. In Audacity, any group box is a previous
 			# sibling of a control, rather than a previous sibling of the parent of a control.
@@ -158,6 +153,9 @@ class AppModule(appModuleHandler.AppModule):
 			groupBox = IAccessibleHandler.findGroupboxObject(obj)
 			if groupBox:
 				obj.container = groupBox
+			else:
+				# don't check again
+				self.seenHandles.add(obj.windowHandle)
 		if obj.windowClassName=='#32768' and obj.role == controlTypes.ROLE_POPUPMENU:
 			obj.name='DropDown'
 		if obj.role==11 and '\\' in obj.name:
@@ -180,14 +178,16 @@ class AppModule(appModuleHandler.AppModule):
 				[' ', 'Ctrl', 'Left', 'Right', 'Up', 'Down', 'Pageuparrow', 'Pagedownarrow', 'Return'], \
 				['', 'control','leftarrow','rightarrow', 'uparrow', 'downarrow', 'pageup', 'pagedown', 'enter']).lower()
 			ncmd=KIGesture.fromName(shortcut)
+			cmd = cmd.title()
 			if cmd in canditatesStartTime + canditatesEndTime + canditatesLength:
 				self.navGestures[ncmd.identifiers[1]]=self.replaceMulti(cmd, [' ','(',')','/'], ['', '', '', ''])
-			assignedShortcuts[ncmd.normalizedIdentifiers[1]]=(cmd, obj, parentName)
+			assignedShortcuts[ncmd.normalizedIdentifiers[1]]=(cmd, obj, parentName.title())
 
 	def _get_Menus(self, obj):
 		if len(assignedShortcuts)==0 and obj.previous and obj.previous.role==controlTypes.ROLE_MENUBAR:
 			menus=obj.previous.children
 			# 9 menus for V2.1.3 and 10(+2) for V2.2.0
+			# 11 menus for V2.2.2 and presumably 12for V2.3.0
 			if len(menus) >=9:
 				signet=dataPath+'signet.wav'
 				playWaveFile(signet)
@@ -245,7 +245,7 @@ class AppModule(appModuleHandler.AppModule):
 		obj=api.getForegroundObject()
 		if obj.name==None:
 			obj=api.getFocusAncestors()[2]
-		wh=obj.windowHandle
+		wh=api.winUser.getForegroundWindow()
 		if wh in toolBars:
 			return toolBars[wh].get(key)
 		elif obj.windowClassName=='wxWindowNR' and self._update_Toolbars():
@@ -266,12 +266,19 @@ class AppModule(appModuleHandler.AppModule):
 			except:
 				pass
 		#Mainly for the Compressor effect
-		if obj.role in [8, 24] and obj.next and obj.next.role==7 and (obj.next.next==None or not(obj.next.name in obj.next.next.name)):
+		if ((obj.role==8 and not controlTypes.STATE_READONLY in obj.states)or \
+		obj.role==24 )and \
+		obj.location[3]<obj.location[2] and \
+		(obj.next and obj.next.name is not None) and \
+		obj.next.role==7 and \
+		(obj.next.next is None or \
+		obj.next.name not in (obj.next.next.name or '')):
 			try:
-				obj.name+=' '+obj.next.name
+				if not obj.next.name in obj.name:
+					obj.name+=' '+obj.next.name
 			except:
 				pass
-		# suppress things like[Panel, Track View Table, TABLEROW...] FURING FOCUS GAINING
+		# suppress things like[Panel, Track View Table, TABLEROW...]
 		if obj.windowText =='Track Panel':
 			speech.cancelSpeech()
 		if obj.windowClassName=='#32768' and obj.role == controlTypes.ROLE_POPUPMENU:
@@ -282,14 +289,23 @@ class AppModule(appModuleHandler.AppModule):
 		nextHandler()
 
 	def event_valueChange(self, obj, nextHandler):
-		if obj and obj.hasFocus and obj.role==24 and obj.name==None and obj.previous and obj.previous.role==8:
-			try:
-				# A bug in the Nyquist sliders, there's always a zero appended 
-				val=obj.previous.value.rstrip('0')
-				val += '0' if val.endswith('.') else ''
-				ui.message(val)
-			except:
-				pass
+		if obj and obj.hasFocus and obj.role==24:
+			#tones.beep(1000,10)
+			if obj.name==None and obj.previous and obj.previous.role==8:
+				try:
+					# A bug in the Nyquist sliders, there's always a zero appended 
+					val=str(eval(obj.previous.value))
+					ui.message(val)
+				except:
+					pass
+			elif not (obj.location[3]>obj.location[2] or obj.container.role==controlTypes.ROLE_TOOLBAR):
+				val=obj.previous.value
+				if val:
+					obj.name=' '.join([obj._get_name(),val])
+					ui.message(val)
+				else:
+					obj.name=obj.previous.name
+					ui.message(obj.previous.name)
 		nextHandler()
 
 	def event_nameChange(self, obj, nextHandler):
@@ -304,7 +320,7 @@ class AppModule(appModuleHandler.AppModule):
 		nextHandler()
 
 	def script_systemMixer(self,gesture):
-		client.CreateObject("WScript.Shell").Run('sndvol')
+		os.startfile('sndvol.exe')
 	script_systemMixer.__doc__=_('Opens the System Volume Mixer, same as rightclicking on the speaker icon in the tray')
 	script_systemMixer.category=SCRCAT_AUDACITY
 
@@ -319,7 +335,6 @@ class AppModule(appModuleHandler.AppModule):
 	script_states.category=SCRCAT_AUDACITY
 
 	def script_help(self, gesture):
-		import re
 		with open(self.helpPath,'r') as helpFile:
 			help_html=helpFile.read()
 			speech.cancelSpeech
@@ -342,7 +357,8 @@ class AppModule(appModuleHandler.AppModule):
 		for x in menuFull:
 			if x.role==11 and not controlTypes.STATE_HASPOPUP in x.states:
 				out+=repr(x.name.partition('\x09')[0])+',\n'
-		ui.browseableMessage(out)
+		# ui.browseableMessage(out)
+		ui.browseableMessage('\n'.join((api.getCaretObject().name,api.getFocusObject().name,str(api.getForegroundObject().windowHandle),str(api.winUser.getForegroundWindow()))))
 	script_info.__doc__=_('debugging info')
 	script_info.category=SCRCAT_AUDACITY
 
@@ -535,7 +551,7 @@ class SelectionControls (NVDAObjects.IAccessible.IAccessible):
 	}
 
 class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
-	# prevent the roles table and row (= trackpanel and audio track) from being spoken 
+	# prevent the roles table and row (= track panel and audio track) from being spoken 
 	controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLEROW)
 	controlTypes.silentValuesForRoles.add(controlTypes.ROLE_TABLEROW)
 	controlTypes.silentRolesOnFocus.add(controlTypes.ROLE_TABLE)
@@ -545,53 +561,22 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 		self.appName=self.appModuleName
 
 	def _get_next(self):
+			if not self.positionInfo: return
 			totalGroup,posGroup=self.positionInfo.values()
 			if 0<posGroup<totalGroup:
-				return self.parent.children[posGroup]
+				return self.parent.getChild(posGroup)
 
 	def _get_previous(self):
+			if not self.positionInfo: return
 			totalGroup,posGroup=self.positionInfo.values()
 			if 1<posGroup<=totalGroup:
-				return self.parent.children[posGroup-2]
+				return self.parent.getChild(posGroup-2)
 
 	def event_gainFocus(self):
 		super(Track,self).event_gainFocus()
 		if self.IAccessibleChildID>=0:
 			self._update_Toolbars()
 			self.bindGestures(self.navGestures)
-
-	def transportAction(self,button,action=None):
-		target=self.transportToolBar(button)
-		if not action:
-			return target.states
-		else:
-			try:
-				target.doAction(0)
-			except NotImplementedError:
-				pass
-			return
-
-
-	def menuAction(self,menuHeading,menuItem,action=None):
-		target=self.mainMenu(menuHeading).firstChild.getChild(menuItem)
-		if not action:
-			return target
-		else:
-			try:
-				target.doAction(0)
-			except NotImplementedError:
-				pass
-			return
-
-	def getTransportState(self,button):
-		try:
-			stateConsts = dict((const, name) for name, const in controlTypes.__dict__.items() if name.startswith('STATE_'))
-			ret = ', '.join(
-				stateConsts.get(state) or str(state)
-				for state in button.states)
-		except Exception as e:
-			ret = 'exception: %s' % e
-		return (ret)
 
 	def script_quickMarker(self, gesture):
 		KIGesture.fromName('control+m').send()
@@ -644,7 +629,6 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 			selTracks=['Soloed ']
 			selChoice='Solo On'
 		for track in self.parent.children:
-			#if controlTypes.STATE_SELECTED in track.states:
 			if selChoice in track.name:
 				selTracks.append(track.name.replace(selChoice, ''))
 				try:
@@ -737,18 +721,18 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 					pick('end')
 
 	# commands that should speak the new selection length
-	def script_SelectiontoStart(self, gesture):
+	def script_SelectionToStart(self, gesture):
 		self.autoTime(gesture,4)
-	def script_SelectiontoEnd(self, gesture):
+	def script_SelectionToEnd(self, gesture):
 		self.autoTime(gesture,5)
-	def script_TrackStarttoCursor(self, gesture):
+	def script_TrackStartToCursor(self, gesture):
 		self.autoTime(gesture, 4)
-	def script_CursortoTrackEnd(self, gesture):
+	def script_CursorToTrackEnd(self, gesture):
 		self.autoTime(gesture, 5)
 	#commands that should speak the start or end time of the selection
 	def script_AddLabelAtPlaybackPosition(self, gesture):
 		self.autoTime(gesture)
-	def script_PlayStopandSetCursor(self, gesture):
+	def script_PlayStopAndSetCursor(self, gesture):
 		self.autoTime(gesture)
 	def script_SelectionStart(self, gesture):
 		self.autoTime(gesture)
@@ -766,15 +750,15 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 		self.autoTime(gesture)
 	def script_ProjectEnd(self, gesture):
 		self.autoTime(gesture)
-	def script_Shortseekleftduringplayback(self, gesture):
+	def script_ShortSeekLeftDuringPlayback(self, gesture):
 		self.autoTime(gesture)
-	def script_Longseekleftduringplayback(self, gesture):
+	def script_LongSeekLeftDuringPlayback(self, gesture):
 		self.autoTime(gesture)
 	def script_SelectionExtendLeft(self, gesture):
 		self.autoTime(gesture)
-	def script_SetorExtendLeftSelection(self, gesture):
+	def script_SetOrExtendLeftSelection(self, gesture):
 		self.autoTime(gesture,2)
-	def script_LeftatPlaybackPosition(self, gesture):
+	def script_LeftAtPlaybackPosition(self, gesture):
 		self.autoTime(gesture,2)
 	def script_SelectionContractLeft(self, gesture):
 		self.autoTime(gesture)
@@ -788,19 +772,19 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 		self.autoTime(gesture)
 	def script_ClipRight(self, gesture):
 		self.autoTime(gesture)
-	def script_Shortseekrightduringplayback(self, gesture):
+	def script_ShortSeekRightDuringPlayback(self, gesture):
 		self.autoTime(gesture)
 	def script_CursorRight(self, gesture):
 		self.autoTime(gesture)
 	def script_SelectionExtendRight(self, gesture):
 		self.autoTime(gesture,1)
-	def script_SetorExtendRightSelection(self, gesture):
+	def script_SetOrExtendRightSelection(self, gesture):
 		self.autoTime(gesture,3)
-	def script_RightatPlaybackPosition(self, gesture):
+	def script_RightAtPlaybackPosition(self, gesture):
 		self.autoTime(gesture,3)
 	def script_SelectionContractRight(self, gesture):
 		self.autoTime(gesture,1)
-	def script_LongSeekrightduringplayback(self, gesture):
+	def script_LongSeekRightDuringPlayback(self, gesture):
 		self.autoTime(gesture,1)
 	def script_CursorShortJumpRight(self, gesture):
 		self.autoTime(gesture,1)
@@ -822,15 +806,23 @@ class Track (NVDAObjects.IAccessible.IAccessible, AppModule):
 		'kb:nvda+shift+volumeDown':'reduceRight',
 	}
 
-class labelTrack(Track):
+class LabelTrack(DisplayModelLiveText):
 	shouldAllowIAccessibleFocusEvent=True
 	editMode=0
 	navMode=0
 
 	def initOverlayClass(self):
 		self.isFocusable=True
-		#if '><' in self.name:
-		# self.editMode=2g
 
 	def event_gainFocus(self):
-		super(labelTrack,self).event_gainFocus()
+		super(LabelTrack,self).event_gainFocus()
+		self.startMonitoring()
+
+	def event_loseFocus(self):
+		self.stopMonitoring()
+
+		def _getTextLines(self):
+			return self.displayText.split()
+	def event_textChange(self):
+		super(LabelTrack, self).event_textChange()
+		# tones.beep(900,10)

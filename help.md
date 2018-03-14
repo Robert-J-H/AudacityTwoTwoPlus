@@ -22,8 +22,7 @@ Best compatible  with  version 2.2.2, restricted functionality for earlier versi
 * Shortcuts for JAWS Guide and Addon Help
 
 ----
-
-## <a id="full_help"> </a> Full Help
+## <a id="full_help">Full Help</a>
 
 ### Table of Default Keyboard Shortcuts
 The input gestures  are mainly available in the Track View, exceptions are indicated
